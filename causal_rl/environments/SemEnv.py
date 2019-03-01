@@ -32,29 +32,21 @@ class StructuralEquation(object):
         # where sum(diag(w.T @ z)) is sum(w_prev.T * z_prev + w.T * z)
         return self.w.t().matmul(z).diag().sum() + torch.randn(1)
 
-class Noise(object):
-    def __init__(self, vmin=0.1, vmax=5):
-        self.v = torch.zeros(1).uniform_(vmin, vmax).item()
-
-    def __call__(self, n):
-        return torch.randn(n) * self.v
-
-
 class StructuralEquationModel(object):
     def __init__(self, dag):
 
+        # NB: don't want randomness during development.
         torch.manual_seed(1)
-        
+        # # # # #
+
         self.graph = dag
         self.dim = dag.dim
         self.depth = dag.depth
 
         self.functions = []
-        self.noises = []
         for i in range(self.dim):
             parents_i = self.graph.parents(i)
             self.functions.append(StructuralEquation(parents_i, self.dim, self.depth))
-            self.noises.append(Noise())
 
     def __call__(self, n, z_prev=None, intervention=None):
 
