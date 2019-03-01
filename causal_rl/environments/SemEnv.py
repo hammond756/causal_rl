@@ -81,7 +81,7 @@ class SemEnv(gym.Env):
              [1, 1, 0]]
         ])
         
-        self.time_limit = 1
+        self.time_limit = 100
 
         # represents causal relations in Z
         self.graph = DirectedAcyclicGraph(graph)
