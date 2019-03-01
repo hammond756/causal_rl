@@ -4,23 +4,33 @@ import torch
 
 class DirectedAcyclicGraph(object):
     def __init__(self, graph):
+        # TODO: assert graph is lower triangular. Evaluation of SEM depends on this.
         self.g = graph
         self.g = self.g.long()
-        self.dim = graph.shape[0]
+        self.dim = graph.shape[1]
+        self.depth = graph.shape[0]
 
     def parents(self, i):
-        return self.g[i].nonzero().view(-1).tolist()
+        parents = self.g[:, i].nonzero()
+        return parents
 
 class StructuralEquation(object):
-    def __init__(self, parents, dim):
-        self.w = torch.randn(dim)
+    def __init__(self, parents, dim, depth):
+        self.w = torch.zeros(dim, depth)
+        
+        # sample weights for all incomming edges (including trough time)
+        for parent in parents:
+            t, i = parent
+            self.w[i, t] = torch.randn(1)
 
-        for i in range(dim):
-            if i not in parents:
-                self.w[i] = 0
-
-    def __call__(self, x):
-        return (self.w * x).sum(1, keepdim=True) + torch.randn(1)
+    def __call__(self, z):
+        # w.T = [ [-- incoming weights t-1 -- ]
+        #         [-- incoming weights t   -- ] ]
+        # z   = [ [ z_0', z_0 ],
+        #         [ z_1', z_1 ]
+        #         [ z_2', z_3 ]]
+        # where sum(diag(w.T @ z)) is sum(w_prev.T * z_prev + w.T * z)
+        return self.w.t().matmul(z).diag().sum() + torch.randn(1)
 
 class Noise(object):
     def __init__(self, vmin=0.1, vmax=5):
@@ -37,46 +47,56 @@ class StructuralEquationModel(object):
         
         self.graph = dag
         self.dim = dag.dim
+        self.depth = dag.depth
 
         self.functions = []
         self.noises = []
         for i in range(self.dim):
             parents_i = self.graph.parents(i)
-            self.functions.append(StructuralEquation(parents_i, self.dim))
+            self.functions.append(StructuralEquation(parents_i, self.dim, self.depth))
             self.noises.append(Noise())
 
-    def __call__(self, n, intervention=None):
+    def __call__(self, n, z_prev=None, intervention=None):
 
-        data = torch.zeros(n, self.dim)
+        z = torch.zeros(n+1, self.dim)
 
-        for i in range(n):
+        # initial state
+        z[0] = z_prev if z_prev is not None else torch.randn(self.dim)
+
+        for t in range(1, n+1):
             for j in range(self.dim):
                 if intervention == j:
-                    data[i, j] = 1 # variabje j is only determined by action
+                    z[t, j] = 1 # variabje j is only determined by action
                 else:
-                    data[i, j] = self.functions[j](data[i].view(1, -1))
+                    # prepare inputs, see StructuralEquation.__call__ for details
+                    z_ = torch.stack([z[t-1], z[t]], dim=1)
+                    z[t, j] = self.functions[j](z_)
 
-        return data
+        # return states (excluding previous state)
+        return z[1:]
 
 class SemEnv(gym.Env):
 
     def __init__(self, output_size=5, mode='easy'):
 
         graph = torch.tensor([
-            [0, 0, 0],
-            [1, 0, 0],
-            [1, 1, 0]
+            [[1, 0, 0],
+             [0, 1, 0],
+             [0, 0, 1]],
+
+            [[0, 0, 0],
+             [1, 0, 0],
+             [1, 1, 0]]
         ])
         
-        self.dim = graph.shape[0]
-        self.time_limit = 30
+        self.time_limit = 1
 
         # represents causal relations in Z
         self.graph = DirectedAcyclicGraph(graph)
         self.causal_model = StructuralEquationModel(self.graph)
 
         # transforms Z into S
-        self.generative_model = torch.nn.Linear(self.dim, output_size)
+        self.generative_model = torch.nn.Linear(self.graph.dim, output_size)
         for param in self.generative_model.parameters():
             param.requires_grad = False
     
@@ -93,7 +113,7 @@ class SemEnv(gym.Env):
         
         # update state Z
         self.prev_state = self.state
-        self.state = self.causal_model(1, intervention=action).squeeze()
+        self.state = self.causal_model(1, z_prev=self.prev_state, intervention=action).squeeze()
         
         # check deadline
         done = self.t == self.time_limit
