@@ -36,7 +36,7 @@ class StructuralEquation(object):
     Args:
      - weights: a 2D tensor of weights. Shape should be TimeSteps x Dimension
     """
-    def __init__(self, weights, noise=False):
+    def __init__(self, weights, noise):
         self.w = torch.tensor(weights, dtype=torch.float)
         self.noise = noise
 
@@ -48,19 +48,19 @@ class StructuralEquation(object):
         #         [ z_2', z_3 ]]
         # where sum(diag(w.T @ z)) is sum(w_prev.T * z_prev + w.T * z)
         if self.noise:
-            noise = toch.randn(1)
+            noise = torch.randn(1)
         else:
             noise = 0
         return self.w.matmul(z).diag().sum() + noise
         
 class StructuralEquationModel(object):
-    def __init__(self, graph):
+    def __init__(self, graph, noise=False):
 
         self.graph = graph
         self.dim = graph.dim
         self.depth = graph.depth
 
-        self.functions = [StructuralEquation(graph.weights(i)) for i in range(self.dim)]
+        self.functions = [StructuralEquation(graph.weights(i), noise) for i in range(self.dim)]
 
     def __call__(self, n, z_prev=None, intervention=None):
 
@@ -95,13 +95,17 @@ class StructuralEquationModel(object):
             weights[i] = weights[i] * edges[i]
         
         graph = DirectedAcyclicGraph(weights)
-        return StructuralEquationModel(graph)
+        return StructuralEquationModel(graph, noise=True)
     
     @classmethod
     def random(self, dim, p_sparsity):
         g_t = torch.ones(dim, dim).tril(-1)
         g_t *= torch.zeros(dim, dim).bernoulli_(1 - p_sparsity)
-        g_prev = torch.eye(dim) # only self-connection trough time
+
+        # random SEM won't have recurrent connection for now
+        # TODO: make this an option
+        g_prev = torch.zeros_like(g_t)
+
         g = torch.stack([g_prev, g_t]).long()
 
-        return self.with_edges(g)
+        return self.random_with_edges(g)
