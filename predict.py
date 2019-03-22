@@ -1,3 +1,20 @@
+"""
+This script runs an adverserial RL algorithm on a simple causal
+envrionment. The algorithm works as follows:
+
+There are two networks, a predictor and actor. The predictor
+is trained to correctly predict the value of target variable Y,
+given the state of observed variables X. This network models
+the (causal) relation between these sets of variables. The actor
+models the agent and picks a variable to intervene on.
+
+As a signal, the predictor gets the prediction error and a regulizer.
+The actor is rewarded in proportion to the predction loss of the 
+predictor. In other words, it is motivated by making the predcitor
+slip up. The idea is that the actor proposes interventions that
+are optimally informative for the predictor.
+"""
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
