@@ -22,6 +22,8 @@ import visdom
 
 from causal_rl.sem.utils import draw
 from causal_rl.sem import StructuralEquationModel
+from causal_rl.environments.causal_models import *
+from causal_rl.sem.utils import draw
 
 def pretty(vector):
     vlist = vector.view(-1).tolist()
@@ -49,31 +51,31 @@ if __name__ == "__main__":
     torch.manual_seed(42)
     vis = visdom.Visdom()
 
-    dim = 10
-    n_targets = 1
-    observed = dim - n_targets
-
     n_iterations = 50000
     log_iters = 1000
     use_random_policy = False
-    entr_loss_coeff = 1
+    entr_loss_coeff = 0
+
+    # initialize causal model
+    sem = StructuralEquationModel.random_with_edges(classic_confounding)
+    z_prev = None
+    target = 2
+    observed_variables = torch.tensor([i for i in range(sem.dim) if i is not target])
 
     # init predictor. This model takes in sampled values of X and
     # tries to predict Y. (ie. estimating incomming weights on Y)
-    predictor = torch.nn.Linear(observed, 1, bias=False)
+    predictor = torch.nn.Linear(sem.dim - 1, 1, bias=False)
     optimizer = torch.optim.Adam(predictor.parameters())
-
-    # initialize causal model
-    sem = StructuralEquationModel.random(dim, 0.3)
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
     if not use_random_policy:
-        policy = SimplePolicy(observed)
+        policy = SimplePolicy(sem.dim - 1)
         policy_optim = torch.optim.Adam(policy.parameters(), lr=0.003)
         # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.01)
         # policy_baseline = 0
 
+    # containers for statistics
     loss_log = []
     loss_sum = 0
     iter_log = []
@@ -82,13 +84,9 @@ if __name__ == "__main__":
     reward_sum = 0
     reward_log = []
 
-    z_prev = torch.randn(dim)
-    target = torch.randint(dim, (1,)).long().item()
-    observed_variables = torch.tensor([i for i in range(dim) if i is not target])
-
     for iteration in range(n_iterations):
         if use_random_policy:
-            action_idx = random_policy(observed)
+            action_idx = random_policy(sem.dim - 1)
         else:
             # sample action from policy network
             action_logprob = policy()
@@ -110,9 +108,9 @@ if __name__ == "__main__":
         params = next(predictor.parameters())
 
         # compute loss
-        pred_loss = (predictor(X) - Y).abs().sum()
+        pred_loss = (predictor(X) - Y).pow(2)
         reg_loss = F.l1_loss(params, torch.zeros_like(params))
-        loss = pred_loss + reg_loss
+        loss = pred_loss # + reg_loss
 
         loss_sum += pred_loss.item()
         loss.backward()
