@@ -19,10 +19,14 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import visdom
+import pickle
+import matplotlib.pyplot as plt
+import argparse
+import os
 
 from causal_rl.sem.utils import draw
 from causal_rl.sem import StructuralEquationModel
-from causal_rl.environments.causal_models import *
+from causal_rl.environments import causal_models
 from causal_rl.sem.utils import draw
 
 def pretty(vector):
@@ -47,19 +51,29 @@ class SimplePolicy(nn.Module):
         action_logprob = F.log_softmax(self.action_weight, dim=-1)
         return action_logprob
 
-if __name__ == "__main__":
-    torch.manual_seed(42)
+def predict(config):
+
+    torch.manual_seed(config.seed)
     vis = visdom.Visdom()
 
-    n_iterations = 50000
-    log_iters = 1000
-    use_random_policy = False
-    entr_loss_coeff = 0
+    n_iterations = config.n_iters
+    log_iters = config.log_iters
+    use_random_policy = config.use_random
+    entr_loss_coeff = config.entr_loss_coeff
+    graph = causal_models.get(config.dag_name)
+    target = config.target_var
+
+    # save arguments to file
+    with open(config.output_dir + '/config.txt', 'w') as f:
+        for key, value in vars(config).items():
+            f.write('--{}\n{}\n'.format(key, value))
+    
+    # save visualization of causal graph
+    draw(graph[1,:,:], config.output_dir + '/graph.png')
 
     # initialize causal model
-    sem = StructuralEquationModel.random_with_edges(classic_confounding)
+    sem = StructuralEquationModel.random_with_edges(graph)
     z_prev = None
-    target = 2
     observed_variables = torch.tensor([i for i in range(sem.dim) if i is not target])
 
     # init predictor. This model takes in sampled values of X and
@@ -141,8 +155,6 @@ if __name__ == "__main__":
             action_loss.backward()
             policy_optim.step()
 
-
-        # TODO: adapt logging to time-dependent structure!!!
         if (iteration+1) % log_iters == 0:
             w_true = sem.graph.weights(target)[1, observed_variables].view(-1)
             w_model = predictor.weight.view(-1)
@@ -157,12 +169,50 @@ if __name__ == "__main__":
             
             loss_sum = 0
             d = torch.stack([w_true, w_model])
-            vis.bar(d.t(), win='d')
-            vis.line(X=iter_log, Y=loss_log, win='loss', opts={'title': 'pred loss'})
+            vis.bar(d.t(), win='d', opts={
+                'title' : 'weights', 
+                'rownames' : observed_variables.tolist(),
+                'legend' : ['true', 'model']
+            })
+            vis.line(X=iter_log, Y=loss_log, win='loss', opts={'title': 'pred_loss'})
             vis.line(X=iter_log, Y=causal_err, win='causal_err', opts={'title': 'causal_err'})
 
             if not use_random_policy:
                 reward_log.append(reward_sum / log_iters)
                 reward_sum = 0
                 vis.line(X=iter_log, Y=reward_log, win='reward', opts={'title': 'reward'})
-                vis.bar(action_prob, win='action')
+                vis.bar(action_prob, win='action', opts={'title' : 'action_prob', 'rownames' : observed_variables.tolist()})
+
+class readable_dir(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        prospective_dir=values
+        if not os.path.isdir(prospective_dir):
+            raise argparse.ArgumentTypeError("readable_dir:{0} is not a valid path".format(prospective_dir))
+        if os.access(prospective_dir, os.R_OK):
+            setattr(namespace,self.dest,prospective_dir)
+        else:
+            raise argparse.ArgumentTypeError("readable_dir:{0} is not a readable dir".format(prospective_dir))
+
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
+
+    parser.add_argument('--dag_name', type=str, required=True)
+    parser.add_argument('--target_var', type=int, required=True)
+    parser.add_argument('--n_iters', type=int, default=50000)
+    parser.add_argument('--log_iters', type=int, default=1000)
+    parser.add_argument('--use_random', type=str2bool, default=False)
+    parser.add_argument('--entr_loss_coeff', type=float, default=0)
+    parser.add_argument('--output_dir', type=str, action=readable_dir)
+    parser.add_argument('--seed', type=int, default=0)
+
+    config = parser.parse_args()
+
+    predict(config)

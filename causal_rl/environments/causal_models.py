@@ -35,3 +35,10 @@ classic_confounding = torch.tensor([
      [1, 0, 0],
      [1, 1, 0]]
 ])
+
+causal_models = {
+    'chain' : chain,
+    'common_cause' : common_cause,
+    'common_effect' : common_effect,
+    'classic_confounding' : classic_confounding
+}
