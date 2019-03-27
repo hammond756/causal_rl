@@ -26,6 +26,7 @@ bin/**
 obj/**
 .pytest_cache
 tmp/**
+experiments/**
 .python-version
 .vs/
 .vscode
