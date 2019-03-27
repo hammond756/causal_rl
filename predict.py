@@ -24,6 +24,7 @@ import matplotlib.pyplot as plt
 import argparse
 import os
 
+from causal_rl.graph_utils import bar
 from causal_rl.sem.utils import draw
 from causal_rl.sem import StructuralEquationModel
 from causal_rl.environments import causal_models
@@ -91,6 +92,7 @@ def predict(config):
 
     # containers for statistics
     loss_log = []
+    action_probs = []
     loss_sum = 0
     iter_log = []
     causal_err = []
@@ -111,7 +113,7 @@ def predict(config):
            
 
         # sample from SEM, using the selected action as intervention
-        z = sem(n=1, z_prev=z_prev, intervention=(action, 0))
+        z = sem(n=1, z_prev=z_prev, intervention=(action, config.intervention_value))
 
         X = z[:, observed_variables]
         Y = z[:, target]
@@ -178,10 +180,41 @@ def predict(config):
             vis.line(X=iter_log, Y=causal_err, win='causal_err', opts={'title': 'causal_err'})
 
             if not use_random_policy:
+                action_probs.append(action_prob)
                 reward_log.append(reward_sum / log_iters)
                 reward_sum = 0
                 vis.line(X=iter_log, Y=reward_log, win='reward', opts={'title': 'reward'})
                 vis.bar(action_prob, win='action', opts={'title' : 'action_prob', 'rownames' : observed_variables.tolist()})
+
+
+    fig, ax = plt.subplots(2,3)
+
+    bar(ax[0][0], d.detach())
+    ax[0][1].plot(iter_log, loss_log)
+    ax[0][2].plot(iter_log, causal_err)
+    
+    if not use_random_policy:
+        y_plot = [torch.tensor(y) for y in zip(*action_probs)]
+        y_plot = torch.stack(y_plot, dim=0)
+        x_plot = torch.arange(y_plot.shape[1])
+        ax[1][2].stackplot(x_plot, y_plot, labels=observed_variables.tolist())
+        ax[1][2].legend()
+
+        ax[1][0].plot(iter_log, reward_log)
+        bar(ax[1][1], action_prob.detach(), labels=observed_variables.tolist())
+    
+    plt.savefig(config.output_dir + '/stats.png')
+
+    with open(config.output_dir + '/stats.pkl', 'wb') as f:
+        data = {
+            'true_weights' : w_true,
+            'model_weights' : w_model,
+            'loss' : loss_log,
+            'causal_err' : causal_err,
+            'action_probs' : action_probs if not config.use_random else None,
+            'reward' : reward_log if not config.use_random else None
+        }
+        pickle.dump(data, f)
 
 class readable_dir(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -212,6 +245,7 @@ if __name__ == '__main__':
     parser.add_argument('--entr_loss_coeff', type=float, default=0)
     parser.add_argument('--output_dir', type=str, action=readable_dir)
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--intervention_value', type=int, default=0)
 
     config = parser.parse_args()
 
