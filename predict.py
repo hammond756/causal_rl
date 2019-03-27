@@ -22,6 +22,7 @@ import pickle
 import matplotlib.pyplot as plt
 import argparse
 import os
+import time
 
 from causal_rl.graph_utils import bar
 from causal_rl.sem.utils import draw
@@ -62,16 +63,26 @@ def predict(config):
     graph = causal_models.get(config.dag_name)
     target = config.target_var
 
+    # initialize causal model
+    if config.dag_name != 'random':
+        sem = StructuralEquationModel.random_with_edges(graph)
+    else:
+        sem = StructuralEquationModel.random(*config.random_dag)
+
     # save arguments to file
     with open(config.output_dir + '/config.txt', 'w') as f:
         for key, value in vars(config).items():
-            f.write('--{}\n{}\n'.format(key, value))
-    
-    # save visualization of causal graph
-    draw(graph[1,:,:], config.output_dir + '/graph.png')
+            f.write('--{}\n'.format(key))
+            
+            if type(value) == list:
+                for val in value:
+                    f.write('{}\n'.format(val))
+            else:
+                f.write('{}\n'.format(value))
 
-    # initialize causal model
-    sem = StructuralEquationModel.random_with_edges(graph)
+    # save visualization of causal graph
+    draw(sem.graph.edges[1,:,:], config.output_dir + '/graph.png')
+
     z_prev = None
     observed_variables = torch.tensor([i for i in range(sem.dim) if i is not target])
 
@@ -225,6 +236,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
 
     parser.add_argument('--dag_name', type=str, required=True)
+    parser.add_argument('--random_dag', type=float, nargs=2, required=False)
     parser.add_argument('--target_var', type=int, required=True)
     parser.add_argument('--n_iters', type=int, default=50000)
     parser.add_argument('--log_iters', type=int, default=1000)
@@ -235,5 +247,14 @@ if __name__ == '__main__':
     parser.add_argument('--intervention_value', type=int, default=0)
 
     config = parser.parse_args()
+
+    if config.dag_name is 'random':
+        assert 'random_dag' in vars(config), 'Size is required for a random graph'
+    
+    if not config.output_dir:
+        timestamp = int(time.time())
+        output_dir = os.path.join('experiments', 'inbox', str(timestamp))
+        os.makedirs(output_dir)
+        config.output_dir = output_dir
 
     predict(config)

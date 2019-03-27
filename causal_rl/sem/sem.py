@@ -99,6 +99,10 @@ class StructuralEquationModel(object):
     
     @classmethod
     def random(self, dim, p_sparsity):
+
+        assert dim == int(dim), "Structural equation 'dim' should be a whole number."
+        dim = int(dim)
+
         g_t = torch.ones(dim, dim).tril(-1)
         g_t *= torch.zeros(dim, dim).bernoulli_(1 - p_sparsity)
 
