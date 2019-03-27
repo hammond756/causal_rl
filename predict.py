@@ -18,7 +18,6 @@ are optimally informative for the predictor.
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import visdom
 import pickle
 import matplotlib.pyplot as plt
 import argparse
@@ -55,7 +54,6 @@ class SimplePolicy(nn.Module):
 def predict(config):
 
     torch.manual_seed(config.seed)
-    vis = visdom.Visdom()
 
     n_iterations = config.n_iters
     log_iters = config.log_iters
@@ -158,12 +156,10 @@ def predict(config):
             policy_optim.step()
 
         if (iteration+1) % log_iters == 0:
+            print('iter {} / {}'.format(iteration+1, n_iterations))
+
             w_true = sem.graph.weights(target)[1, observed_variables].view(-1)
             w_model = predictor.weight.view(-1)
-            print("SAMPLE", pretty(X.view(-1)))
-            print("TRUTH ", pretty(w_true))
-            print("MODEL ", pretty(w_model))
-            print()
 
             loss_log.append(loss_sum / log_iters)
             iter_log.append(iteration)
@@ -171,20 +167,11 @@ def predict(config):
             
             loss_sum = 0
             d = torch.stack([w_true, w_model])
-            vis.bar(d.t(), win='d', opts={
-                'title' : 'weights', 
-                'rownames' : observed_variables.tolist(),
-                'legend' : ['true', 'model']
-            })
-            vis.line(X=iter_log, Y=loss_log, win='loss', opts={'title': 'pred_loss'})
-            vis.line(X=iter_log, Y=causal_err, win='causal_err', opts={'title': 'causal_err'})
 
             if not use_random_policy:
                 action_probs.append(action_prob)
                 reward_log.append(reward_sum / log_iters)
                 reward_sum = 0
-                vis.line(X=iter_log, Y=reward_log, win='reward', opts={'title': 'reward'})
-                vis.bar(action_prob, win='action', opts={'title' : 'action_prob', 'rownames' : observed_variables.tolist()})
 
 
     fig, ax = plt.subplots(2,3)
