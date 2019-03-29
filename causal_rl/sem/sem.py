@@ -11,8 +11,12 @@ class DirectedAcyclicGraph(object):
     def parents(self, i):
         return self._weights[:, i].nonzero()
     
-    def weights(self, i):
+    def incoming_weights(self, i):
         return self._weights[:, i]
+    
+    @property
+    def weights(self):
+        return self._weights
 
     @property
     def edges(self):
@@ -60,7 +64,7 @@ class StructuralEquationModel(object):
         self.dim = graph.dim
         self.depth = graph.depth
 
-        self.functions = [StructuralEquation(graph.weights(i), noise) for i in range(self.dim)]
+        self.functions = [StructuralEquation(graph.incoming_weights(i), noise) for i in range(self.dim)]
 
     def __call__(self, n, z_prev=None, intervention=None):
 
