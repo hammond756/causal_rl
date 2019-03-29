@@ -3,12 +3,12 @@ This script runs an adverserial RL algorithm on a simple causal
 envrionment. The algorithm works as follows:
 
 There are two networks, a predictor and actor. The predictor
-is trained to correctly predict the value of target variable Y,
+is trained to correctly predict the effect of an intervention,
 given the state of observed variables X. This network models
-the (causal) relation between these sets of variables. The actor
-models the agent and picks a variable to intervene on.
+the (causal) relation between these variables. The actor
+models the agent and picks the intervention.
 
-As a signal, the predictor gets the prediction error and a regulizer.
+As a signal, the predictor gets the prediction error.
 The actor is rewarded in proportion to the predction loss of the 
 predictor. In other words, it is motivated by making the predcitor
 slip up. The idea is that the actor proposes interventions that
@@ -23,6 +23,7 @@ import matplotlib.pyplot as plt
 import argparse
 import os
 import time
+import uuid
 
 from causal_rl.graph_utils import bar
 from causal_rl.sem.utils import draw
@@ -61,7 +62,6 @@ def predict(config):
     use_random_policy = config.use_random
     entr_loss_coeff = config.entr_loss_coeff
     graph = causal_models.get(config.dag_name)
-    target = config.target_var
 
     # initialize causal model
     if config.dag_name != 'random':
@@ -83,20 +83,20 @@ def predict(config):
     # save visualization of causal graph
     draw(sem.graph.edges[1,:,:], config.output_dir + '/graph.png')
 
-    z_prev = None
-    observed_variables = torch.tensor([i for i in range(sem.dim) if i is not target])
+    variables = torch.arange(sem.dim)
 
     # init predictor. This model takes in sampled values of X and
-    # tries to predict Y. (ie. estimating incomming weights on Y)
-    predictor = torch.nn.Linear(sem.dim - 1, 1, bias=False)
+    # tries to predict X under intervention X_i = 0. The learned
+    # weights model the weights on the causal model.
+    predictor = torch.nn.Linear(sem.dim, sem.dim, bias=False)
     optimizer = torch.optim.Adam(predictor.parameters())
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
     if not use_random_policy:
-        policy = SimplePolicy(sem.dim - 1)
+        policy = SimplePolicy(sem.dim)
         policy_optim = torch.optim.Adam(policy.parameters(), lr=0.003)
-        # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.01)
+        # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
         # policy_baseline = 0
 
     # containers for statistics
@@ -111,21 +111,24 @@ def predict(config):
 
     for iteration in range(n_iterations):
         if use_random_policy:
-            action_idx = random_policy(sem.dim - 1)
+            action_idx = random_policy(sem.dim)
         else:
             # sample action from policy network
             action_logprob = policy()
             action_prob = action_logprob.exp()
             action_idx = torch.multinomial(action_prob, 1).long().item()
         
-        action = observed_variables[action_idx]
-           
+        action = variables[action_idx]
 
-        # sample from SEM, using the selected action as intervention
-        z = sem(n=1, z_prev=z_prev, intervention=(action, config.intervention_value))
+        # gather observations required for loss
+        Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
+        
+        # prepare input to predictor "what if Z_action was 0" ??
+        Z_masked = Z_observational
+        Z_masked[:, action] = config.intervention_value
 
-        X = z[:, observed_variables]
-        Y = z[:, target]
+        Z_pred_intervention = predictor(Z_masked)
+        Z_true_intervention = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=(action, config.intervention_value))
 
         # Backprop on predictor. Adjust weights s.t. predictions get closer
         # to truth.
@@ -133,16 +136,13 @@ def predict(config):
         params = next(predictor.parameters())
 
         # compute loss
-        pred_loss = (predictor(X) - Y).pow(2)
+        pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).sum()
         reg_loss = F.l1_loss(params, torch.zeros_like(params))
         loss = pred_loss # + reg_loss
 
         loss_sum += pred_loss.item()
         loss.backward()
         optimizer.step()
-
-        # go to next state
-        z_prev = z
 
         if not use_random_policy:
             policy_optim.zero_grad()
@@ -169,15 +169,15 @@ def predict(config):
         if (iteration+1) % log_iters == 0:
             print('iter {} / {}'.format(iteration+1, n_iterations))
 
-            w_true = sem.graph.weights(target)[1, observed_variables].view(-1)
-            w_model = predictor.weight.view(-1)
+            w_true = sem.graph.weights[1,:,:]
+            w_model = predictor.weight.detach()
+            diff = (w_true - w_model)
 
             loss_log.append(loss_sum / log_iters)
             iter_log.append(iteration)
-            causal_err.append((w_true - w_model).abs().sum().item())
+            causal_err.append(diff.abs().sum().item())
             
             loss_sum = 0
-            d = torch.stack([w_true, w_model])
 
             if not use_random_policy:
                 action_probs.append(action_prob)
@@ -187,19 +187,20 @@ def predict(config):
 
     fig, ax = plt.subplots(2,3)
 
-    bar(ax[0][0], d.detach())
+    im = ax[0][2].matshow(diff)
+    plt.colorbar(mappable=im, ax=ax[0][2])
     ax[0][1].plot(iter_log, loss_log)
-    ax[0][2].plot(iter_log, causal_err)
+    ax[0][0].plot(iter_log, causal_err)
     
     if not use_random_policy:
         y_plot = [torch.tensor(y) for y in zip(*action_probs)]
         y_plot = torch.stack(y_plot, dim=0)
         x_plot = torch.arange(y_plot.shape[1])
-        ax[1][2].stackplot(x_plot, y_plot, labels=observed_variables.tolist())
+        ax[1][2].stackplot(x_plot, y_plot, labels=variables.tolist())
         ax[1][2].legend()
 
         ax[1][0].plot(iter_log, reward_log)
-        bar(ax[1][1], action_prob.detach(), labels=observed_variables.tolist())
+        bar(ax[1][1], action_prob.detach(), labels=variables.tolist())
     
     plt.savefig(config.output_dir + '/stats.png')
 
@@ -237,7 +238,6 @@ if __name__ == '__main__':
 
     parser.add_argument('--dag_name', type=str, required=True)
     parser.add_argument('--random_dag', type=float, nargs=2, required=False)
-    parser.add_argument('--target_var', type=int, required=True)
     parser.add_argument('--n_iters', type=int, default=50000)
     parser.add_argument('--log_iters', type=int, default=1000)
     parser.add_argument('--use_random', type=str2bool, default=False)
@@ -252,7 +252,7 @@ if __name__ == '__main__':
         assert 'random_dag' in vars(config), 'Size is required for a random graph'
     
     if not config.output_dir:
-        timestamp = int(time.time())
+        timestamp = str(uuid.uuid1())
         output_dir = os.path.join('experiments', 'inbox', str(timestamp))
         os.makedirs(output_dir)
         config.output_dir = output_dir
