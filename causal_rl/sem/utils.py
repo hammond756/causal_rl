@@ -11,7 +11,8 @@ def draw(graph, path=None):
 
     # plot graph
     plt.subplot(111)
-    nx.draw(G, with_labels=True)
+    pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
+    nx.draw(G, pos=pos, with_labels=True)
 
     # save or show based on provided path
     if path is None:
