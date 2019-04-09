@@ -53,6 +53,19 @@ class SimplePolicy(nn.Module):
         action_logprob = F.log_softmax(self.action_weight, dim=-1)
         return action_logprob
 
+class Predictor(nn.Module):
+    def __init__(self, dim, n_hidden):
+        super(Predictor, self).__init__()
+        self.linear1 = nn.Linear(dim*2, n_hidden)
+        self.linear2 = nn.Linear(n_hidden, dim)
+    
+    def forward(self, features):
+        out = self.linear1(features)
+        out = F.relu(out)
+        out = self.linear2(out)
+
+        return out
+
 def predict(config):
 
     torch.manual_seed(config.seed)
@@ -88,14 +101,14 @@ def predict(config):
     # init predictor. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = 0. The learned
     # weights model the weights on the causal model.
-    predictor = torch.nn.Linear(sem.dim, sem.dim, bias=False)
-    optimizer = torch.optim.Adam(predictor.parameters())
+    predictor = Predictor(sem.dim, config.n_hidden)
+    optimizer = torch.optim.Adam(predictor.parameters(), lr=config.lr)
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
     if not use_random_policy:
         policy = SimplePolicy(sem.dim)
-        policy_optim = torch.optim.Adam(policy.parameters(), lr=0.003)
+        policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
         # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
         # policy_baseline = 0
 
@@ -104,7 +117,6 @@ def predict(config):
     action_probs = []
     loss_sum = 0
     iter_log = []
-    causal_err = []
     action_loss_sum = 0
     reward_sum = 0
     reward_log = []
@@ -119,26 +131,21 @@ def predict(config):
             action_idx = torch.multinomial(action_prob, 1).long().item()
         
         action = variables[action_idx]
+        action_vector = torch.zeros(sem.dim) \
+                              .scatter_(0, torch.tensor(action), 1) \
+                              .unsqueeze(0)
 
-        # gather observations required for loss
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
-        
-        # prepare input to predictor "what if Z_action was 0" ??
-        Z_masked = Z_observational
-        Z_masked[:, action] = config.intervention_value
-
-        Z_pred_intervention = predictor(Z_masked)
+        Z_pred_intervention = predictor(torch.cat([Z_observational, action_vector], dim=1))
         Z_true_intervention = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=(action, config.intervention_value))
 
         # Backprop on predictor. Adjust weights s.t. predictions get closer
         # to truth.
         optimizer.zero_grad()
-        params = next(predictor.parameters())
 
         # compute loss
         pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).sum()
-        reg_loss = F.l1_loss(params, torch.zeros_like(params))
-        loss = pred_loss # + reg_loss
+        loss = pred_loss
 
         loss_sum += pred_loss.item()
         loss.backward()
@@ -167,15 +174,10 @@ def predict(config):
             policy_optim.step()
 
         if (iteration+1) % log_iters == 0:
-            print('iter {} / {}'.format(iteration+1, n_iterations))
-
-            w_true = sem.graph.weights[1,:,:]
-            w_model = predictor.weight.detach()
-            diff = (w_true - w_model)
+            print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, loss_sum / log_iters))
 
             loss_log.append(loss_sum / log_iters)
             iter_log.append(iteration)
-            causal_err.append(diff.abs().sum().item())
             
             loss_sum = 0
 
@@ -187,10 +189,7 @@ def predict(config):
 
     fig, ax = plt.subplots(2,3)
 
-    im = ax[0][2].matshow(diff)
-    plt.colorbar(mappable=im, ax=ax[0][2])
     ax[0][1].plot(iter_log, loss_log)
-    ax[0][0].plot(iter_log, causal_err)
     
     if not use_random_policy:
         y_plot = [torch.tensor(y) for y in zip(*action_probs)]
@@ -206,10 +205,7 @@ def predict(config):
 
     with open(config.output_dir + '/stats.pkl', 'wb') as f:
         data = {
-            'true_weights' : w_true,
-            'model_weights' : w_model,
             'loss' : loss_log,
-            'causal_err' : causal_err,
             'action_probs' : action_probs if not config.use_random else None,
             'reward' : reward_log if not config.use_random else None
         }
@@ -245,6 +241,8 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', type=str, action=readable_dir)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--intervention_value', type=int, default=0)
+    parser.add_argument('--n_hidden', type=int, default=25)
+    parser.add_argument('--lr', type=float, default=0.0001)
 
     config = parser.parse_args()
 
