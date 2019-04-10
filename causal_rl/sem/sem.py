@@ -54,8 +54,8 @@ class StructuralEquation(object):
         if self.noise:
             noise = torch.randn(1)
         else:
-            noise = 0
-        return self.w.matmul(z).diag().sum() + noise
+            noise = torch.tensor(0)
+        return self.w.matmul(z).diag().sum(), noise
         
 class StructuralEquationModel(object):
     def __init__(self, graph, noise=False):
@@ -65,15 +65,18 @@ class StructuralEquationModel(object):
         self.depth = graph.depth
 
         self.functions = [StructuralEquation(graph.incoming_weights(i), noise) for i in range(self.dim)]
+        self.noises = torch.zeros(self.dim)
 
-    def __call__(self, n, z_prev=None, intervention=None):
-
+    def counterfactual(self, z_prev=None, intervention=None):
+        return self._sample(1, z_prev, intervention, fix_noise=True)
+    
+    def _sample(self, n, z_prev=None, intervention=None, fix_noise=False):
         z = torch.zeros(n+1, self.dim)
 
         # initial state
         z[0] = z_prev if z_prev is not None else torch.randn(self.dim)
 
-        # invervention
+        # intervention
         if intervention is not None:
             inter_target, inter_value = intervention
         else:
@@ -86,10 +89,22 @@ class StructuralEquationModel(object):
                 else:
                     # prepare inputs, see StructuralEquation.__call__ for details
                     z_ = torch.stack([z[t-1], z[t]], dim=1)
-                    z[t, j] = self.functions[j](z_)
+                    value, noise = self.functions[j](z_)
+                    z[t, j] = value
+
+                    if fix_noise:
+                        z[t, j] += self.noises[j]
+                    else:
+                        noise = noise.item()
+                        z[t, j] += noise
+                        self.noises[j] = noise
 
         # return states (excluding previous state)
         return z[1:]
+    
+
+    def __call__(self, n, z_prev=None, intervention=None):
+        return self._sample(n, z_prev, intervention, fix_noise=False)
     
     @classmethod
     def random_with_edges(self, edges):

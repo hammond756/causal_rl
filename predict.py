@@ -137,7 +137,7 @@ def predict(config):
 
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
         Z_pred_intervention = predictor(torch.cat([Z_observational, action_vector], dim=1))
-        Z_true_intervention = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=(action, config.intervention_value))
+        Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=(action, config.intervention_value))
 
         # Backprop on predictor. Adjust weights s.t. predictions get closer
         # to truth.
