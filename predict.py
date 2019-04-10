@@ -131,8 +131,8 @@ def predict(config):
             action_idx = torch.multinomial(action_prob, 1).long().item()
         
         action = variables[action_idx]
-        action_vector = torch.zeros(sem.dim) \
-                              .scatter_(0, torch.tensor(action), 1) \
+        action_vector = torch.ones(sem.dim) \
+                              .scatter_(0, torch.tensor(action), 0) \
                               .unsqueeze(0)
 
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
