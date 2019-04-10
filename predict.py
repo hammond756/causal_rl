@@ -174,8 +174,13 @@ def predict(config):
             policy_optim.step()
 
         if (iteration+1) % log_iters == 0:
+            print()
             print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, loss_sum / log_iters))
-
+            print('obs ', pretty(Z_observational))
+            print('int ', pretty(action_vector))
+            print('pred', pretty(Z_pred_intervention))
+            print('true', pretty(Z_true_intervention))
+            print()
             loss_log.append(loss_sum / log_iters)
             iter_log.append(iteration)
             
