@@ -29,7 +29,6 @@ from causal_rl.graph_utils import bar
 from causal_rl.sem.utils import draw
 from causal_rl.sem import StructuralEquationModel
 from causal_rl.environments import causal_models
-from causal_rl.sem.utils import draw
 
 def pretty(vector):
     vlist = vector.view(-1).tolist()
