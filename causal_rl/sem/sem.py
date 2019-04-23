@@ -19,6 +19,15 @@ class DirectedAcyclicGraph(object):
         return self._weights
 
     @property
+    def _roots(self):
+        diagonal = torch.zeros(self.dim)
+        for i in range(self.dim):
+            if self.parents(i).nelement() == 0: 
+                diagonal[i] = 1
+        
+        return torch.diag(diagonal)
+
+    @property
     def edges(self):
         edges = torch.zeros_like(self._weights)
         for i,j,k in self._weights.nonzero():
@@ -66,6 +75,10 @@ class StructuralEquationModel(object):
 
         self.functions = [StructuralEquation(graph.incoming_weights(i), noise) for i in range(self.dim)]
         self.noises = torch.zeros(self.dim)
+
+    @property
+    def roots(self):
+        return self.graph._roots
 
     def counterfactual(self, z_prev=None, intervention=None):
         return self._sample(1, z_prev, intervention, fix_noise=True)

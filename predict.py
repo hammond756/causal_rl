@@ -53,15 +53,25 @@ class SimplePolicy(nn.Module):
         return action_logprob
 
 class Predictor(nn.Module):
-    def __init__(self, dim, n_hidden):
+    def __init__(self, dim):
         super(Predictor, self).__init__()
-        self.linear1 = nn.Linear(dim*2, n_hidden)
-        self.linear2 = nn.Linear(n_hidden, dim)
+        self.dim = dim
+        self.linear1 = nn.Linear(dim, dim)
+
+    def _mask(self, vector, intervention):
+        target, value = intervention
+        vector.scatter_(dim=1, index=torch.tensor([[target]]), value=value)
     
-    def forward(self, features):
-        out = self.linear1(features)
-        out = F.relu(out)
-        out = self.linear2(out)
+    def forward(self, features, intervention):
+        target, value = intervention
+
+        # make a copy of the input, since _mask will modify in-place
+        out = torch.tensor(features)
+        self._mask(out, intervention)
+
+        for _ in range(self.dim):
+            out = self.linear1(out)
+            self._mask(out, intervention)
 
         return out
 
@@ -100,7 +110,7 @@ def predict(config):
     # init predictor. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = 0. The learned
     # weights model the weights on the causal model.
-    predictor = Predictor(sem.dim, config.n_hidden)
+    predictor = Predictor(sem.dim)
     optimizer = torch.optim.Adam(predictor.parameters(), lr=config.lr)
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
@@ -119,6 +129,7 @@ def predict(config):
     action_loss_sum = 0
     reward_sum = 0
     reward_log = []
+    causal_err = []
 
     for iteration in range(n_iterations):
         if use_random_policy:
@@ -130,12 +141,9 @@ def predict(config):
             action_idx = torch.multinomial(action_prob, 1).long().item()
         
         action = variables[action_idx]
-        action_vector = torch.ones(sem.dim) \
-                              .scatter_(0, torch.tensor(action), 0) \
-                              .unsqueeze(0)
 
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
-        Z_pred_intervention = predictor(torch.cat([Z_observational, action_vector], dim=1))
+        Z_pred_intervention = predictor(Z_observational, (action, config.intervention_value))
         Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=(action, config.intervention_value))
 
         # Backprop on predictor. Adjust weights s.t. predictions get closer
@@ -176,12 +184,18 @@ def predict(config):
             print()
             print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, loss_sum / log_iters))
             print('obs ', pretty(Z_observational))
-            print('int ', pretty(action_vector))
             print('pred', pretty(Z_pred_intervention))
             print('true', pretty(Z_true_intervention))
             print()
+
+            w_true = sem.graph.weights[1,:,:] + sem.roots
+            w_model = predictor.linear1.weight.detach()
+            diff = (w_true - w_model)
+            causal_err.append(diff.abs().sum().item())
+
             loss_log.append(loss_sum / log_iters)
             iter_log.append(iteration)
+
             
             loss_sum = 0
 
@@ -190,10 +204,20 @@ def predict(config):
                 reward_log.append(reward_sum / log_iters)
                 reward_sum = 0
 
+    print('model', w_model)
+    print('true', w_true)
 
     fig, ax = plt.subplots(2,3)
 
+    im = ax[0][2].matshow(diff)
+    plt.colorbar(mappable=im, ax=ax[0][2])
+    ax[0][2].set_title('weight diff')
+
     ax[0][1].plot(iter_log, loss_log)
+    ax[0][1].set_title('loss')
+
+    ax[0][0].plot(iter_log, causal_err)
+    ax[0][0].set_title('causal_err')
     
     if not use_random_policy:
         y_plot = [torch.tensor(y) for y in zip(*action_probs)]
@@ -201,15 +225,22 @@ def predict(config):
         x_plot = torch.arange(y_plot.shape[1])
         ax[1][2].stackplot(x_plot, y_plot, labels=variables.tolist())
         ax[1][2].legend()
+        ax[1][2].set_title('action_probs')
 
         ax[1][0].plot(iter_log, reward_log)
+        ax[1][0].set_title('reward')
+
         bar(ax[1][1], action_prob.detach(), labels=variables.tolist())
+        ax[1][1].set_title('final action prob')
     
     plt.savefig(config.output_dir + '/stats.png')
 
     with open(config.output_dir + '/stats.pkl', 'wb') as f:
         data = {
+            'true_weights' : w_true,
+            'model_weights' : w_model,
             'loss' : loss_log,
+            'causal_err' : causal_err,
             'action_probs' : action_probs if not config.use_random else None,
             'reward' : reward_log if not config.use_random else None
         }
@@ -245,7 +276,6 @@ if __name__ == '__main__':
     parser.add_argument('--output_dir', type=str, action=readable_dir)
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--intervention_value', type=int, default=0)
-    parser.add_argument('--n_hidden', type=int, default=25)
     parser.add_argument('--lr', type=float, default=0.0001)
 
     config = parser.parse_args()
