@@ -107,17 +107,17 @@ class StructuralEquationModel(object):
         return self._sample(n, z_prev, intervention, fix_noise=False)
     
     @classmethod
-    def random_with_edges(self, edges):
+    def random_with_edges(self, edges, noise=False):
         edges = edges.float()
         weights = torch.randn_like(edges)
         for i in range(edges.shape[0]):
             weights[i] = weights[i] * edges[i]
         
         graph = DirectedAcyclicGraph(weights)
-        return StructuralEquationModel(graph, noise=True)
+        return StructuralEquationModel(graph, noise=noise)
     
     @classmethod
-    def random(self, dim, p_sparsity):
+    def random(self, dim, p_sparsity, noise=False):
 
         assert dim == int(dim), "Structural equation 'dim' should be a whole number."
         dim = int(dim)
@@ -131,4 +131,4 @@ class StructuralEquationModel(object):
 
         g = torch.stack([g_prev, g_t]).long()
 
-        return self.random_with_edges(g)
+        return self.random_with_edges(g, noise=noise)
