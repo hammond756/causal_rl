@@ -31,7 +31,7 @@ class DirectedAcyclicGraph(object):
         Assure that:
          - adjecency matrix for current time step is lower triangular
         """
-        assert (self.edges[-1].triu() == torch.zeros_like(self.edges[-1])).all()
+        assert (self.edges[-1].triu(1) == torch.zeros_like(self.edges[-1])).all(), 'Graph is not lower triangular'
 
 class StructuralEquation(object):
     """
