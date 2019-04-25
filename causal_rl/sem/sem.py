@@ -49,9 +49,8 @@ class StructuralEquation(object):
     Args:
      - weights: a 2D tensor of weights. Shape should be TimeSteps x Dimension
     """
-    def __init__(self, weights, noise):
+    def __init__(self, weights):
         self.w = torch.tensor(weights, dtype=torch.float)
-        self.noise = noise
 
     def __call__(self, z):
         # w   = [ [-- incoming weights t-1 -- ]
@@ -60,20 +59,17 @@ class StructuralEquation(object):
         #         [ z_1', z_1 ]
         #         [ z_2', z_3 ]]
         # where sum(diag(w.T @ z)) is sum(w_prev.T * z_prev + w.T * z)
-        if self.noise:
-            noise = torch.randn(1)
-        else:
-            noise = torch.tensor(0)
-        return self.w.matmul(z).diag().sum(), noise
+        return self.w.matmul(z).diag().sum()
         
 class StructuralEquationModel(object):
-    def __init__(self, graph, noise=False):
+    def __init__(self, graph, std=0):
 
         self.graph = graph
         self.dim = graph.dim
         self.depth = graph.depth
+        self.std = std
 
-        self.functions = [StructuralEquation(graph.incoming_weights(i), noise) for i in range(self.dim)]
+        self.functions = [StructuralEquation(graph.incoming_weights(i)) for i in range(self.dim)]
         self.noises = torch.zeros(self.dim)
 
     @property
@@ -102,14 +98,15 @@ class StructuralEquationModel(object):
                 else:
                     # prepare inputs, see StructuralEquation.__call__ for details
                     z_ = torch.stack([z[t-1], z[t]], dim=1)
-                    value, noise = self.functions[j](z_)
-                    z[t, j] = value
+                    z[t, j] = self.functions[j](z_)
 
+                    # add noise, either from infered values (counterfactual) or sample new
+                    # NB: needs to be done in inner loop to preserve sampling order.
                     if fix_noise:
                         z[t, j] += self.noises[j]
                     else:
-                        noise = noise.item()
-                        z[t, j] += noise
+                        noise = torch.randn(1) * self.std
+                        z[t, j] += noise.item()
                         self.noises[j] = noise
 
         # return states (excluding previous state)
@@ -120,17 +117,17 @@ class StructuralEquationModel(object):
         return self._sample(n, z_prev, intervention, fix_noise=False)
     
     @classmethod
-    def random_with_edges(self, edges, noise=False):
+    def random_with_edges(self, edges, std=0):
         edges = edges.float()
         weights = torch.randn_like(edges)
         for i in range(edges.shape[0]):
             weights[i] = weights[i] * edges[i]
         
         graph = DirectedAcyclicGraph(weights)
-        return StructuralEquationModel(graph, noise=noise)
+        return StructuralEquationModel(graph, std=std)
     
     @classmethod
-    def random(self, dim, p_sparsity, noise=False):
+    def random(self, dim, p_sparsity, std=0):
 
         assert dim == int(dim), "Structural equation 'dim' should be a whole number."
         dim = int(dim)
@@ -144,4 +141,4 @@ class StructuralEquationModel(object):
 
         g = torch.stack([g_prev, g_t]).long()
 
-        return self.random_with_edges(g, noise=noise)
+        return self.random_with_edges(g, std=std)

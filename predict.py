@@ -89,9 +89,9 @@ def predict(config):
 
     # initialize causal model
     if config.dag_name != 'random':
-        sem = StructuralEquationModel.random_with_edges(graph)
+        sem = StructuralEquationModel.random_with_edges(graph, std=config.noise)
     else:
-        sem = StructuralEquationModel.random(*config.random_dag)
+        sem = StructuralEquationModel.random(*config.random_dag, std=config.noise)
 
     # save arguments to file
     with open(config.output_dir + '/config.txt', 'w') as f:
@@ -286,6 +286,7 @@ if __name__ == '__main__':
     parser.add_argument('--intervention_value', type=int, default=0)
     parser.add_argument('--lr', type=float, default=0.0001)
     parser.add_argument('--reg_lambda', type=float, default=1.)
+    parser.add_argument('--noise', type=float, default=0.)
 
     config = parser.parse_args()
 
