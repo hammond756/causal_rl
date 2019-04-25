@@ -34,6 +34,10 @@ def pretty(vector):
     vlist = vector.view(-1).tolist()
     return "[" + ", ".join("{:+.3f}".format(vi) for vi in vlist) + "]"
 
+def print_pretty(matrix):
+    for row in matrix:
+        print(pretty(row))
+
 def random_policy(dim):
     return torch.randint(0, dim, (1,)).long().item()
 
@@ -195,7 +199,15 @@ def predict(config):
             print('true', pretty(Z_true_intervention))
             print()
 
-            w_true = sem.graph.weights[1,:,:] # + sem.roots
+            print('gradients')
+            print_pretty(predictor.linear1.grad)
+            print()
+
+            print('new model weights')
+            print_pretty(predictor.linear1)
+            print()
+
+            w_true = sem.graph.weights[1,:,:] + sem.roots
             w_model = predictor.linear1.detach()
             diff = (w_true - w_model)
             causal_err.append(diff.abs().sum().item())
@@ -300,3 +312,5 @@ if __name__ == '__main__':
         config.output_dir = output_dir
 
     predict(config)
+
+    print('experiment id:', timestamp)
