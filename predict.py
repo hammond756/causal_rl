@@ -154,7 +154,8 @@ def predict(config):
 
         # compute loss
         pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).sum()
-        loss = pred_loss
+        reg_loss = torch.norm(predictor.linear1, 1)
+        loss = pred_loss + config.reg_lambda * reg_loss
 
         loss_sum += pred_loss.item()
         loss.backward()
@@ -283,6 +284,7 @@ if __name__ == '__main__':
     parser.add_argument('--seed', type=int, default=0)
     parser.add_argument('--intervention_value', type=int, default=0)
     parser.add_argument('--lr', type=float, default=0.0001)
+    parser.add_argument('--reg_lambda', type=float, default=1.)
 
     config = parser.parse_args()
 
