@@ -56,7 +56,9 @@ class Predictor(nn.Module):
     def __init__(self, dim):
         super(Predictor, self).__init__()
         self.dim = dim
-        self.linear1 = nn.Linear(dim, dim)
+
+        # heuristic: we know the true weights are lower triangular
+        self.linear1 = nn.Parameter(torch.randn((dim,dim)).tril_(-1))
 
     def _mask(self, vector, intervention):
         target, value = intervention
@@ -70,7 +72,7 @@ class Predictor(nn.Module):
         self._mask(out, intervention)
 
         for _ in range(self.dim):
-            out = self.linear1(out)
+            out = out.matmul(self.linear1.t())
             self._mask(out, intervention)
 
         return out
@@ -156,6 +158,10 @@ def predict(config):
 
         loss_sum += pred_loss.item()
         loss.backward()
+
+        # heuristic. we know that the true matrix is lower triangular.
+        predictor.linear1.grad.tril_(-1)
+
         optimizer.step()
 
         if not use_random_policy:
@@ -188,8 +194,8 @@ def predict(config):
             print('true', pretty(Z_true_intervention))
             print()
 
-            w_true = sem.graph.weights[1,:,:] + sem.roots
-            w_model = predictor.linear1.weight.detach()
+            w_true = sem.graph.weights[1,:,:] # + sem.roots
+            w_model = predictor.linear1.detach()
             diff = (w_true - w_model)
             causal_err.append(diff.abs().sum().item())
 
