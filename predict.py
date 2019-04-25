@@ -216,9 +216,9 @@ def predict(config):
 
     fig, ax = plt.subplots(2,3)
 
-    im = ax[0][2].matshow(diff)
+    im = ax[0][2].matshow(diff.abs(), vmin=0, vmax=1)
     plt.colorbar(mappable=im, ax=ax[0][2])
-    ax[0][2].set_title('weight diff')
+    ax[0][2].set_title('weight diff', pad=23)
 
     ax[0][1].plot(iter_log, loss_log)
     ax[0][1].set_title('loss')
@@ -240,6 +240,7 @@ def predict(config):
         bar(ax[1][1], action_prob.detach(), labels=variables.tolist())
         ax[1][1].set_title('final action prob')
     
+    plt.tight_layout()
     plt.savefig(config.output_dir + '/stats.png')
 
     with open(config.output_dir + '/stats.pkl', 'wb') as f:
