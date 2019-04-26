@@ -81,35 +81,29 @@ class Predictor(nn.Module):
 
         return out
 
-def predict(config):
-
-    torch.manual_seed(config.seed)
-
-    n_iterations = config.n_iters
-    log_iters = config.log_iters
-    use_random_policy = config.use_random
-    entr_loss_coeff = config.entr_loss_coeff
-    graph = causal_models.get(config.dag_name)
-
-    # initialize causal model
-    if config.dag_name != 'random':
-        sem = StructuralEquationModel.random_with_edges(graph, std=config.noise)
-    else:
-        sem = StructuralEquationModel.random(*config.random_dag, std=config.noise)
-
-    # save arguments to file
+def save_configuration(config):
+    """
+    Creates a file in the output directory specified in the _config_ object
+    with all the arguments and values. This file can be used to re-run the
+    script with the same parameters.
+    """
     with open(config.output_dir + '/config.txt', 'w') as f:
         for key, value in vars(config).items():
             f.write('--{}\n'.format(key))
-            
+
+            # if nargs > 1 they all need to be on a new line
             if type(value) == list:
                 for val in value:
                     f.write('{}\n'.format(val))
             else:
                 f.write('{}\n'.format(value))
+        
+def predict(sem, config):
 
-    # save visualization of causal graph
-    draw(sem.graph.edges[1,:,:], config.output_dir + '/graph.png')
+    n_iterations = config.n_iters
+    log_iters = config.log_iters
+    use_random_policy = config.use_random
+    entr_loss_coeff = config.entr_loss_coeff
 
     variables = torch.arange(sem.dim)
 
@@ -254,17 +248,15 @@ def predict(config):
     
     plt.tight_layout()
     plt.savefig(config.output_dir + '/stats.png')
-
-    with open(config.output_dir + '/stats.pkl', 'wb') as f:
-        data = {
-            'true_weights' : w_true,
-            'model_weights' : w_model,
-            'loss' : loss_log,
-            'causal_err' : causal_err,
-            'action_probs' : action_probs if not config.use_random else None,
-            'reward' : reward_log if not config.use_random else None
-        }
-        pickle.dump(data, f)
+    
+    return {
+        'true_weights' : w_true,
+        'model_weights' : w_model,
+        'loss' : loss_log,
+        'causal_err' : causal_err,
+        'action_probs' : action_probs if not config.use_random else None,
+        'reward' : reward_log if not config.use_random else None
+    }
 
 class readable_dir(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
@@ -283,34 +275,3 @@ def str2bool(v):
         return False
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
-
-if __name__ == '__main__':
-    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
-
-    parser.add_argument('--dag_name', type=str, required=True)
-    parser.add_argument('--random_dag', type=float, nargs=2, required=False)
-    parser.add_argument('--n_iters', type=int, default=50000)
-    parser.add_argument('--log_iters', type=int, default=1000)
-    parser.add_argument('--use_random', type=str2bool, default=False)
-    parser.add_argument('--entr_loss_coeff', type=float, default=0)
-    parser.add_argument('--output_dir', type=str, action=readable_dir)
-    parser.add_argument('--seed', type=int, default=0)
-    parser.add_argument('--intervention_value', type=int, default=0)
-    parser.add_argument('--lr', type=float, default=0.0001)
-    parser.add_argument('--reg_lambda', type=float, default=1.)
-    parser.add_argument('--noise', type=float, default=0.)
-
-    config = parser.parse_args()
-
-    if config.dag_name is 'random':
-        assert 'random_dag' in vars(config), 'Size is required for a random graph'
-    
-    if not config.output_dir:
-        timestamp = str(uuid.uuid1())
-        output_dir = os.path.join('experiments', 'inbox', str(timestamp))
-        os.makedirs(output_dir)
-        config.output_dir = output_dir
-
-    predict(config)
-
-    print('experiment id:', timestamp)
