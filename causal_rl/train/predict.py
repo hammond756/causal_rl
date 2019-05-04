@@ -132,6 +132,9 @@ def predict(sem, config):
     causal_err = []
 
     for iteration in range(n_iterations):
+
+        should_log = (iteration+1) % config.log_iters == 0
+
         if use_random_policy:
             action_idx = random_policy(sem.dim)
         else:
@@ -161,7 +164,22 @@ def predict(sem, config):
         # heuristic. we know that the true matrix is lower triangular.
         predictor.linear1.grad.tril_()
 
+        
+        if should_log:
+            print('old model weights')
+            print_pretty(predictor.linear1)
+            print()
+
+            print('gradients')
+            print_pretty(predictor.linear1.grad)
+            print()
+
         optimizer.step()
+
+        if should_log:
+            print('new model weights')
+            print_pretty(predictor.linear1)
+            print()
 
         if not use_random_policy:
             policy_optim.zero_grad()
@@ -185,20 +203,13 @@ def predict(sem, config):
             action_loss.backward()
             policy_optim.step()
 
-        if (iteration+1) % log_iters == 0:
+        if should_log:
             print()
-            print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, loss_sum / log_iters))
-            print('obs ', pretty(Z_observational))
-            print('pred', pretty(Z_pred_intervention))
-            print('true', pretty(Z_true_intervention))
-            print()
-
-            print('gradients')
-            print_pretty(predictor.linear1.grad)
-            print()
-
-            print('new model weights')
-            print_pretty(predictor.linear1)
+            print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, loss_sum / config.log_iters))
+            print('obs  ', pretty(Z_observational))
+            print('pred ', pretty(Z_pred_intervention))
+            print('true ', pretty(Z_true_intervention))
+            print('noise', pretty(sem.noises))
             print()
 
             w_true = sem.graph.weights[1,:,:] + sem.roots
@@ -206,7 +217,7 @@ def predict(sem, config):
             diff = (w_true - w_model)
             causal_err.append(diff.abs().sum().item())
 
-            loss_log.append(loss_sum / log_iters)
+            loss_log.append(loss_sum / config.log_iters)
             iter_log.append(iteration)
 
             
@@ -214,7 +225,7 @@ def predict(sem, config):
 
             if not use_random_policy:
                 action_probs.append(action_prob)
-                reward_log.append(reward_sum / log_iters)
+                reward_log.append(reward_sum / config.log_iters)
                 reward_sum = 0
 
     print('model', w_model)
