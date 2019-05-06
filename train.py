@@ -62,7 +62,8 @@ if __name__ == '__main__':
     save_configuration(config)
 
     # visualization of causal graph
-    draw(sem.graph.edges[1,:,:], config.output_dir + '/graph.png')
+    if config.plot:
+        draw(sem.graph.edges[1,:,:], config.output_dir + '/graph.png')
 
     # statistics
     with open(config.output_dir + '/stats.pkl', 'wb') as f:
