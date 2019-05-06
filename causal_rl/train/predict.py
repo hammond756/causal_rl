@@ -280,5 +280,6 @@ def predict(sem, config):
         'loss' : loss_log,
         'causal_err' : causal_err,
         'action_probs' : action_probs if not config.use_random else None,
-        'reward' : reward_log if not config.use_random else None
+        'reward' : reward_log if not config.use_random else None,
+        'config' : config
     }
