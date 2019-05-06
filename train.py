@@ -2,10 +2,12 @@ import torch
 import argparse
 import pickle
 import uuid
+import os
 
 from causal_rl.sem import StructuralEquationModel
 from causal_rl.sem.utils import draw
-from causal_rl.train import predict
+from causal_rl.train import predict, PredictArgumentParser
+from causal_rl.environments import causal_models
 
 def save_configuration(config):
     """
@@ -24,40 +26,8 @@ def save_configuration(config):
             else:
                 f.write('{}\n'.format(value))
 
-class readable_dir(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        prospective_dir=values
-        if not os.path.isdir(prospective_dir):
-            raise argparse.ArgumentTypeError("readable_dir:{0} is not a valid path".format(prospective_dir))
-        if os.access(prospective_dir, os.R_OK):
-            setattr(namespace,self.dest,prospective_dir)
-        else:
-            raise argparse.ArgumentTypeError("readable_dir:{0} is not a readable dir".format(prospective_dir))
-
-def str2bool(v):
-    if v.lower() in ('yes', 'true', 't', 'y', '1'):
-        return True
-    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
-        return False
-    else:
-        raise argparse.ArgumentTypeError('Boolean value expected.')
-
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(fromfile_prefix_chars='@')
-
-    parser.add_argument('--dag_name', type=str, required=True)
-    parser.add_argument('--random_dag', type=float, nargs=2, required=False)
-    parser.add_argument('--n_iters', type=int, default=50000)
-    parser.add_argument('--log_iters', type=int, default=1000)
-    parser.add_argument('--use_random', type=str2bool, default=False)
-    parser.add_argument('--entr_loss_coeff', type=float, default=0)
-    parser.add_argument('--output_dir', type=str, action=readable_dir)
-    parser.add_argument('--seed', type=int, default=None)
-    parser.add_argument('--intervention_value', type=int, default=0)
-    parser.add_argument('--lr', type=float, default=0.0001)
-    parser.add_argument('--reg_lambda', type=float, default=1.)
-    parser.add_argument('--noise', type=float, default=0.)
-
+    parser = PredictArgumentParser()
     config = parser.parse_args()
 
     if config.dag_name is 'random':
@@ -97,5 +67,3 @@ if __name__ == '__main__':
     # statistics
     with open(config.output_dir + '/stats.pkl', 'wb') as f:
         pickle.dump(stats, f)
-
-    print('experiment id:', timestamp)

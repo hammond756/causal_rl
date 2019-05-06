@@ -28,7 +28,6 @@ import uuid
 from causal_rl.graph_utils import bar
 from causal_rl.sem.utils import draw
 from causal_rl.sem import StructuralEquationModel
-from causal_rl.environments import causal_models
 
 def pretty(vector):
     vlist = vector.view(-1).tolist()
@@ -46,6 +45,41 @@ def policy_reward(old, new):
     for param_old, param_new in zip(old, new):
         r += (param_old - param_new).abs().sum().item()
     return r
+
+class readable_dir(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        prospective_dir=values
+        if not os.path.isdir(prospective_dir):
+            raise argparse.ArgumentTypeError("readable_dir:{0} is not a valid path".format(prospective_dir))
+        if os.access(prospective_dir, os.R_OK):
+            setattr(namespace,self.dest,prospective_dir)
+        else:
+            raise argparse.ArgumentTypeError("readable_dir:{0} is not a readable dir".format(prospective_dir))
+
+def str2bool(v):
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected.')
+
+class PredictArgumentParser(argparse.ArgumentParser):
+    def __init__(self):
+        super(PredictArgumentParser, self).__init__(fromfile_prefix_chars='@')
+
+        self.add_argument('--dag_name', type=str, required=True)
+        self.add_argument('--random_dag', type=float, nargs=2, required=False)
+        self.add_argument('--n_iters', type=int, default=50000)
+        self.add_argument('--log_iters', type=int, default=1000)
+        self.add_argument('--use_random', type=str2bool, default=False)
+        self.add_argument('--entr_loss_coeff', type=float, default=0)
+        self.add_argument('--output_dir', type=str, action=readable_dir)
+        self.add_argument('--seed', type=int, default=None)
+        self.add_argument('--intervention_value', type=int, default=0)
+        self.add_argument('--lr', type=float, default=0.0001)
+        self.add_argument('--reg_lambda', type=float, default=1.)
+        self.add_argument('--noise', type=float, default=0.)
 
 class SimplePolicy(nn.Module):
     def __init__(self, dim):
@@ -84,7 +118,6 @@ class Predictor(nn.Module):
 def predict(sem, config):
 
     n_iterations = config.n_iters
-    log_iters = config.log_iters
     use_random_policy = config.use_random
     entr_loss_coeff = config.entr_loss_coeff
 
@@ -210,9 +243,6 @@ def predict(sem, config):
                 action_probs.append(action_prob)
                 reward_log.append(reward_sum / config.log_iters)
                 reward_sum = 0
-
-    print('model', w_model)
-    print('true', w_true)
 
     fig, ax = plt.subplots(2,3)
 
