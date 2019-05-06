@@ -44,8 +44,8 @@ if __name__ == '__main__':
     # save seed for reproducibility
     if config.seed is None:
         config.seed = torch.initial_seed()
-
-    torch.manual_seed(config.seed)
+    else:
+        torch.manual_seed(config.seed)
 
     # initialize causal model
     if config.dag_name != 'random':
