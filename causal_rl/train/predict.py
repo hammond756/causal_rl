@@ -91,12 +91,13 @@ class SimplePolicy(nn.Module):
         return action_logprob
 
 class Predictor(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim, sem):
         super(Predictor, self).__init__()
         self.dim = dim
 
         # heuristic: we know the true weights are lower triangular
-        self.linear1 = nn.Parameter(torch.randn((dim,dim)).tril_())
+        # heuristic: root nodes should have self-connection of 1 to carry noise to prediction
+        self.linear1 = nn.Parameter(torch.randn((dim,dim)).tril_(-1) + sem.roots)
 
     def _mask(self, vector, intervention):
         target, value = intervention
@@ -178,7 +179,7 @@ def predict(sem, config):
         loss.backward()
 
         # heuristic. we know that the true matrix is lower triangular.
-        predictor.linear1.grad.tril_()
+        predictor.linear1.grad.tril_(-1)
 
         
         if should_log:

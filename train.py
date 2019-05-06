@@ -40,7 +40,7 @@ if __name__ == '__main__':
         output_dir = os.path.join('experiments', 'inbox', str(_id))
         os.makedirs(output_dir)
         config.output_dir = output_dir
-
+    
     # save seed for reproducibility
     if config.seed is None:
         config.seed = torch.initial_seed()
