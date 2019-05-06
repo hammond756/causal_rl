@@ -80,6 +80,7 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--lr', type=float, default=0.0001)
         self.add_argument('--reg_lambda', type=float, default=1.)
         self.add_argument('--noise', type=float, default=0.)
+        self.add_argument('--plot', type=str2bool, default=False)
 
 class SimplePolicy(nn.Module):
     def __init__(self, dim):
@@ -128,7 +129,7 @@ def predict(sem, config):
     # tries to predict X under intervention X_i = 0. The learned
     # weights model the weights on the causal model.
     predictor = Predictor(sem.dim, sem)
-    optimizer = torch.optim.SGD(predictor.parameters(), lr=config.lr)
+    optimizer = torch.optim.Adam(predictor.parameters(), lr=config.lr)
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
@@ -245,34 +246,35 @@ def predict(sem, config):
                 reward_log.append(reward_sum / config.log_iters)
                 reward_sum = 0
 
-    fig, ax = plt.subplots(2,3)
+    if config.plot:
+        fig, ax = plt.subplots(2,3)
 
-    im = ax[0][2].matshow(diff.abs(), vmin=0, vmax=1)
-    plt.colorbar(mappable=im, ax=ax[0][2])
-    ax[0][2].set_title('weight diff', pad=23)
+        im = ax[0][2].matshow(diff.abs(), vmin=0, vmax=1)
+        plt.colorbar(mappable=im, ax=ax[0][2])
+        ax[0][2].set_title('weight diff', pad=23)
 
-    ax[0][1].plot(iter_log, loss_log)
-    ax[0][1].set_title('loss')
+        ax[0][1].plot(iter_log, loss_log)
+        ax[0][1].set_title('loss')
 
-    ax[0][0].plot(iter_log, causal_err)
-    ax[0][0].set_title('causal_err')
-    
-    if not use_random_policy:
-        y_plot = [torch.tensor(y) for y in zip(*action_probs)]
-        y_plot = torch.stack(y_plot, dim=0)
-        x_plot = torch.arange(y_plot.shape[1])
-        ax[1][2].stackplot(x_plot, y_plot, labels=variables.tolist())
-        ax[1][2].legend()
-        ax[1][2].set_title('action_probs')
+        ax[0][0].plot(iter_log, causal_err)
+        ax[0][0].set_title('causal_err')
+        
+        if not use_random_policy:
+            y_plot = [torch.tensor(y) for y in zip(*action_probs)]
+            y_plot = torch.stack(y_plot, dim=0)
+            x_plot = torch.arange(y_plot.shape[1])
+            ax[1][2].stackplot(x_plot, y_plot, labels=variables.tolist())
+            ax[1][2].legend()
+            ax[1][2].set_title('action_probs')
 
-        ax[1][0].plot(iter_log, reward_log)
-        ax[1][0].set_title('reward')
+            ax[1][0].plot(iter_log, reward_log)
+            ax[1][0].set_title('reward')
 
-        bar(ax[1][1], action_prob.detach(), labels=variables.tolist())
-        ax[1][1].set_title('final action prob')
-    
-    plt.tight_layout()
-    plt.savefig(config.output_dir + '/stats.png')
+            bar(ax[1][1], action_prob.detach(), labels=variables.tolist())
+            ax[1][1].set_title('final action prob')
+        
+        plt.tight_layout()
+        plt.savefig(config.output_dir + '/stats.png')
     
     return {
         'true_weights' : w_true,
