@@ -105,7 +105,7 @@ class StructuralEquationModel(object):
                     if fix_noise:
                         z[t, j] += self.noises[j]
                     else:
-                        noise = torch.zeros(1).bernoulli_(0.5) # torch.randn(1) * self.std
+                        noise = torch.randn(1) * self.std
                         z[t, j] += noise.item()
                         self.noises[j] = noise
 

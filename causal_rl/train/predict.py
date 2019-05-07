@@ -163,9 +163,11 @@ def predict(sem, config):
         
         action = variables[action_idx]
 
+        inter_value = config.intervention_value
+
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
-        Z_pred_intervention = predictor(Z_observational, (action, config.intervention_value))
-        Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=(action, config.intervention_value))
+        Z_pred_intervention = predictor(Z_observational, (action, inter_value))
+        Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=(action, inter_value))
 
         # Backprop on predictor. Adjust weights s.t. predictions get closer
         # to truth.
