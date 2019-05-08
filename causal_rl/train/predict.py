@@ -215,7 +215,7 @@ def predict(sem, config):
         
         action = variables[action_idx]
 
-        inter_value = torch.randint(low=-5,high=5,size=(1,)).item()
+        inter_value = config.intervention_value
 
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
         Z_pred_intervention = predictor(Z_observational, (action, inter_value))
