@@ -49,9 +49,9 @@ if __name__ == '__main__':
 
     # initialize causal model
     if config.dag_name != 'random':
-        sem = StructuralEquationModel.random_with_edges(graph, std=config.noise)
+        sem = StructuralEquationModel.random_with_edges(graph, *config.noise_dist)
     else:
-        sem = StructuralEquationModel.random(*config.random_dag, std=config.noise)
+        sem = StructuralEquationModel.random(*config.random_dag, *config.noise_dist)
 
     stats = predict(sem, config)
 

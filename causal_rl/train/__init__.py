@@ -1,1 +1,1 @@
-from .predict import predict, PredictArgumentParser
+from .predict import predict, PredictArgumentParser, OrderedPredictor, Predictor

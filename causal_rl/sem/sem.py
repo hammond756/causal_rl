@@ -60,16 +60,28 @@ class StructuralEquation(object):
         #         [ z_2', z_3 ]]
         # where sum(diag(w.T @ z)) is sum(w_prev.T * z_prev + w.T * z)
         return self.w.matmul(z).diag().sum()
+
+class Noise(object):
+    def __init__(self, distribution, param):
         
+        if distribution == 'gaussian':
+            self.sample_func = lambda: torch.randn(1) * param
+        
+        if distribution == 'bernoulli':
+            self.sample_func = lambda: torch.zeros(1).bernoulli_(param)
+    
+    def __call__(self):
+        return self.sample_func()
+
 class StructuralEquationModel(object):
-    def __init__(self, graph, std=0):
+    def __init__(self, graph, noise_dist, noise_param):
 
         self.graph = graph
         self.dim = graph.dim
         self.depth = graph.depth
-        self.std = std
 
         self.functions = [StructuralEquation(graph.incoming_weights(i)) for i in range(self.dim)]
+        self.sample_noise = Noise(noise_dist, noise_param)
         self.noises = torch.zeros(self.dim)
 
     @property
@@ -105,7 +117,7 @@ class StructuralEquationModel(object):
                     if fix_noise:
                         z[t, j] += self.noises[j]
                     else:
-                        noise = torch.randn(1) * self.std
+                        noise = self.sample_noise()
                         z[t, j] += noise.item()
                         self.noises[j] = noise
 
@@ -117,17 +129,17 @@ class StructuralEquationModel(object):
         return self._sample(n, z_prev, intervention, fix_noise=False)
     
     @classmethod
-    def random_with_edges(self, edges, std=0):
+    def random_with_edges(self, edges, noise_dist, noise_param):
         edges = edges.float()
         weights = torch.randn_like(edges)
         for i in range(edges.shape[0]):
             weights[i] = weights[i] * edges[i]
         
         graph = DirectedAcyclicGraph(weights)
-        return StructuralEquationModel(graph, std=std)
+        return StructuralEquationModel(graph, noise_dist, noise_param)
     
     @classmethod
-    def random(self, dim, p_sparsity, std=0):
+    def random(self, dim, p_sparsity, noise_dist, noise_param):
 
         assert dim == int(dim), "Structural equation 'dim' should be a whole number."
         dim = int(dim)
@@ -141,4 +153,4 @@ class StructuralEquationModel(object):
 
         g = torch.stack([g_prev, g_t]).long()
 
-        return self.random_with_edges(g, std=std)
+        return self.random_with_edges(g, noise_dist, noise_param)

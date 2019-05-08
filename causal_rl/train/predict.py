@@ -64,11 +64,22 @@ def str2bool(v):
     else:
         raise argparse.ArgumentTypeError('Boolean value expected.')
 
+class parse_noise_arg(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        dist, param = values
+        try:
+            param = float(param)
+        except:
+            raise argparse.ArgumentTypeError('Second argument \'param\' should be a number')
+        
+        setattr(namespace, self.dest, [dist, param])
+
 class PredictArgumentParser(argparse.ArgumentParser):
     def __init__(self):
         super(PredictArgumentParser, self).__init__(fromfile_prefix_chars='@')
 
         self.add_argument('--dag_name', type=str, required=True)
+        self.add_argument('--predictor', type=str, required=True)
         self.add_argument('--random_dag', type=float, nargs=2, required=False)
         self.add_argument('--n_iters', type=int, default=50000)
         self.add_argument('--log_iters', type=int, default=1000)
@@ -79,7 +90,7 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--intervention_value', type=int, default=0)
         self.add_argument('--lr', type=float, default=0.0001)
         self.add_argument('--reg_lambda', type=float, default=1.)
-        self.add_argument('--noise', type=float, default=0.)
+        self.add_argument('--noise_dist', nargs=2, action=parse_noise_arg, default=['gaussian', 1.0])
         self.add_argument('--plot', type=str2bool, default=False)
 
 class SimplePolicy(nn.Module):
@@ -92,13 +103,13 @@ class SimplePolicy(nn.Module):
         return action_logprob
 
 class Predictor(nn.Module):
-    def __init__(self, dim, sem):
+    def __init__(self, sem):
         super(Predictor, self).__init__()
-        self.dim = dim
+        self.dim = sem.dim
 
         # heuristic: we know the true weights are lower triangular
         # heuristic: root nodes should have self-connection of 1 to carry noise to prediction
-        self.linear1 = nn.Parameter(torch.randn((dim,dim)).tril_(-1) + sem.roots)
+        self.linear1 = nn.Parameter(torch.randn((self.dim,self.dim)).tril_(-1) + sem.roots)
 
     def _mask(self, vector, intervention):
         target, value = intervention
@@ -117,6 +128,47 @@ class Predictor(nn.Module):
 
         return out
 
+class OrderedPredictor(nn.Module):
+    def __init__(self, sem):
+        super(OrderedPredictor, self).__init__()
+        self.dim = sem.dim
+
+        # heuristic: we know the true weights are lower triangular
+        # heuristic: root nodes should have self-connection of 1 to carry noise to prediction
+        self.linear1 = nn.Parameter(torch.randn((self.dim,self.dim)).tril_(-1))
+
+        # heuristic: all noise is uncorrleated
+        self.std = nn.Parameter(torch.randn(1))
+    
+    def forward(self, features, intervention):
+        target, value = intervention
+
+        # make a copy of the input, since _mask will modify in-place
+        out = torch.zeros(self.dim)
+
+        # for i in range(self.dim):
+        #     if i == target:
+        #         out[i] = value
+        #     else:
+        #         out[i] = self.linear1[i].matmul(out) + torch.randn(1) * self.std
+
+        for i in range(self.dim):
+            # out[i] = torch.randn(1) # * self.std
+            if i == target:
+                out[i] = value
+                continue
+            
+            incoming = 0
+            for j in range(i):                
+                out[i] = out[i].clone() + self.linear1[i,j] * out[j].clone()
+
+        return out.unsqueeze(0)
+
+predictors = {
+    'ordered' : OrderedPredictor,
+    'repeated' : Predictor
+}
+
 def predict(sem, config):
 
     n_iterations = config.n_iters
@@ -128,7 +180,7 @@ def predict(sem, config):
     # init predictor. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = 0. The learned
     # weights model the weights on the causal model.
-    predictor = Predictor(sem.dim, sem)
+    predictor = predictors.get(config.predictor)(sem)
     optimizer = torch.optim.Adam(predictor.parameters(), lr=config.lr)
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
@@ -188,10 +240,14 @@ def predict(sem, config):
         if should_log:
             print('old model weights')
             print_pretty(predictor.linear1)
+            if config.predictor == 'ordered':
+                print('std', predictor.std)
             print()
 
             print('gradients')
             print_pretty(predictor.linear1.grad)
+            if config.predictor == 'ordered':
+                print('std', predictor.std.grad)
             print()
 
         optimizer.step()
@@ -199,6 +255,8 @@ def predict(sem, config):
         if should_log:
             print('new model weights')
             print_pretty(predictor.linear1)
+            if config.predictor == 'ordered':
+                print('std', predictor.std)
             print()
 
         if not use_random_policy:
