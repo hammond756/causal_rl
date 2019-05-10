@@ -51,7 +51,8 @@ if __name__ == '__main__':
     if config.dag_name != 'random':
         sem = StructuralEquationModel.random_with_edges(graph, *config.noise_dist)
     else:
-        sem = StructuralEquationModel.random(*config.random_dag, *config.noise_dist)
+        args = config.random_dag + config.noise_dist
+        sem = StructuralEquationModel.random(*args)
 
     stats = predict(sem, config)
 

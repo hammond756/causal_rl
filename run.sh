@@ -9,4 +9,6 @@ python train.py \
         --log_iters 1000 \
         --lr 0.001 \
         --reg_lambda 1 \
+        --use_random True \
+        --predictor repeated \
         --seed 0

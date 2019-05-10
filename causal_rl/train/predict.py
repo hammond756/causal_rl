@@ -112,12 +112,13 @@ class Predictor(nn.Module):
         self.linear1 = nn.Parameter(torch.randn((self.dim,self.dim)).tril_(-1) + sem.roots)
 
     def _mask(self, vector, intervention):
+        if intervention is None:
+            return
+
         target, value = intervention
         vector.scatter_(dim=1, index=torch.tensor([[target]]), value=value)
     
     def forward(self, features, intervention):
-        target, value = intervention
-
         # make a copy of the input, since _mask will modify in-place
         out = torch.tensor(features)
         self._mask(out, intervention)
@@ -186,7 +187,7 @@ def predict(sem, config):
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
     if not use_random_policy:
-        policy = SimplePolicy(sem.dim)
+        policy = SimplePolicy(sem.dim + 1)
         policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
         # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
         # policy_baseline = 0
@@ -206,20 +207,24 @@ def predict(sem, config):
         should_log = (iteration+1) % config.log_iters == 0
 
         if use_random_policy:
-            action_idx = random_policy(sem.dim)
+            action_idx = random_policy(sem.dim + 1)
         else:
             # sample action from policy network
             action_logprob = policy()
             action_prob = action_logprob.exp()
             action_idx = torch.multinomial(action_prob, 1).long().item()
         
-        action = variables[action_idx]
+        if action_idx == len(variables):
+            intervention = None
+        else:
+            action = variables[action_idx]
+            inter_value = config.intervention_value
+            intervention = (action, inter_value)
 
-        inter_value = config.intervention_value
 
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
-        Z_pred_intervention = predictor(Z_observational, (action, inter_value))
-        Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=(action, inter_value))
+        Z_pred_intervention = predictor(Z_observational, intervention)
+        Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=intervention)
 
         # Backprop on predictor. Adjust weights s.t. predictions get closer
         # to truth.
