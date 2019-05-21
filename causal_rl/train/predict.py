@@ -187,7 +187,7 @@ def predict(sem, config):
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
     if not use_random_policy:
-        policy = SimplePolicy(sem.dim + 1)
+        policy = SimplePolicy(sem.dim)
         policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
         # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
         # policy_baseline = 0
@@ -207,19 +207,16 @@ def predict(sem, config):
         should_log = (iteration+1) % config.log_iters == 0
 
         if use_random_policy:
-            action_idx = random_policy(sem.dim + 1)
+            action_idx = random_policy(sem.dim)
         else:
             # sample action from policy network
             action_logprob = policy()
             action_prob = action_logprob.exp()
             action_idx = torch.multinomial(action_prob, 1).long().item()
         
-        if action_idx == len(variables):
-            intervention = None
-        else:
-            action = variables[action_idx]
-            inter_value = config.intervention_value
-            intervention = (action, inter_value)
+        action = variables[action_idx]
+        inter_value = config.intervention_value
+        intervention = (action, inter_value)
 
 
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
