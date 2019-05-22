@@ -131,44 +131,56 @@ class Predictor(nn.Module):
         return out
 
 class OrderedPredictor(nn.Module):
-    def __init__(self, sem):
+    def __init__(self, dim):
         super(OrderedPredictor, self).__init__()
-        self.dim = sem.dim
+        self.dim = dim
 
         # heuristic: we know the true weights are lower triangular
         # heuristic: root nodes should have self-connection of 1 to carry noise to prediction
         self.linear1 = nn.Parameter(torch.randn((self.dim,self.dim)).tril_(-1))
-
-        # heuristic: all noise is uncorrleated
-        self.std = nn.Parameter(torch.randn(1))
     
-    def forward(self, features, intervention):
+    def forward(self, observation, noise, intervention):
         target, value = intervention
 
-        # make a copy of the input, since _mask will modify in-place
-        out = torch.zeros(self.dim)
-
-        # for i in range(self.dim):
-        #     if i == target:
-        #         out[i] = value
-        #     else:
-        #         out[i] = self.linear1[i].matmul(out) + torch.randn(1) * self.std
+        output = observation.clone()
 
         for i in range(self.dim):
-            # out[i] = torch.randn(1) # * self.std
             if i == target:
-                out[i] = value
+                output[:, i] = value
                 continue
             
-            incoming = 0
-            for j in range(i):                
-                out[i] = out[i].clone() + self.linear1[i,j] * out[j].clone()
+            output[:, i] = self.linear1[i].matmul(output.clone().t()) + noise[:, i]
 
-        return out.unsqueeze(0)
+        return output
+
+class NoiseInferencer(torch.nn.Module):
+    def __init__(self, dim):
+        super(NoiseInferencer, self).__init__()
+        self.dim = dim
+        self.l1 = torch.nn.Linear(dim, dim)
+    
+    def forward(self, x):
+        out = self.l1(x)
+        return torch.sigmoid(out) # if self.training else (out > 0.7).float()
+
+class TwoStepPredictor(nn.Module):
+    def __init__(self, sem):
+        super(TwoStepPredictor, self).__init__()
+        
+        self.dim = sem.dim
+        self.noise = None
+
+        self.infer_noise = NoiseInferencer(self.dim)
+        self.predictor = OrderedPredictor(self.dim)
+
+    def forward(self, observation, intervention):
+        noise = self.infer_noise(observation)
+        self.noise = noise
+        return self.predictor(observation, noise, intervention)
 
 predictors = {
-    'ordered' : OrderedPredictor,
-    'repeated' : Predictor
+    'repeated' : Predictor,
+    'two_step' : TwoStepPredictor
 }
 
 def predict(sem, config):
@@ -241,7 +253,6 @@ def predict(sem, config):
         inter_value = config.intervention_value
         intervention = (action, inter_value)
 
-
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
         Z_pred_intervention = predictor(Z_observational, intervention)
         Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=intervention)
@@ -252,7 +263,7 @@ def predict(sem, config):
 
         # compute loss
         pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).sum()
-        reg_loss = torch.norm(predictor.linear1, 1)
+        reg_loss = torch.norm(predictor.predictor.linear1, 1)
         loss = pred_loss + config.reg_lambda * reg_loss
 
         # ground truth loss
@@ -265,7 +276,7 @@ def predict(sem, config):
         loss.backward()
 
         # heuristic. we know that the true matrix is lower triangular.
-        predictor.linear1.grad.tril_(-1)
+        predictor.predictor.linear1.grad.tril_(-1)
 
         optimizer.step()
 
@@ -301,10 +312,11 @@ def predict(sem, config):
             print('pred ', pretty(Z_pred_intervention))
             print('true ', pretty(Z_true_intervention))
             print('noise', pretty(sem.noises))
+            print('pred noise:', pretty(predictor.noise))
             print()
 
             w_true = sem.graph.weights[1,:,:] + sem.roots
-            w_model = predictor.linear1.detach()
+            w_model = predictor.predictor.linear1.detach()
             diff = (w_true - w_model)
             stats['causal_err'].append(diff.abs().sum().item())
 
