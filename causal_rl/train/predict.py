@@ -195,7 +195,10 @@ def predict(sem, config):
     # tries to predict X under intervention X_i = 0. The learned
     # weights model the weights on the causal model.
     predictor = predictors.get(config.predictor)(sem)
-    optimizer = torch.optim.Adam(predictor.parameters(), lr=config.lr)
+    optimizers = {
+        'predictor' : torch.optim.Adam(predictor.predictor.parameters(), lr=config.lr),
+        'noise' : torch.optim.Adam(predictor.infer_noise.parameters(), lr=0.1)
+    }
 
     # intialze ground truth to compared learned model against
     ground_truth_predictor = predictors.get(config.predictor)(sem)
@@ -214,7 +217,8 @@ def predict(sem, config):
         'loss' : {
             'pred' : [],
             'reg' : [],
-            'total' : []
+            'total' : [],
+            'noise' : [],
         },
         'ground_loss' : {
             'pred' : [],
@@ -229,6 +233,7 @@ def predict(sem, config):
 
     pred_loss_sum = 0
     reg_loss_sum = 0
+    noise_loss_sum = 0
     total_loss_sum = 0
 
     ground_pred = 0
@@ -254,16 +259,20 @@ def predict(sem, config):
         intervention = (action, inter_value)
 
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
-        Z_pred_intervention = predictor(Z_observational, intervention)
+
+        pred_noise = predictor.infer_noise(Z_observational)
+        Z_pred_intervention = predictor.predictor(Z_observational, pred_noise.detach(), intervention)
         Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=intervention)
 
         # Backprop on predictor. Adjust weights s.t. predictions get closer
         # to truth.
-        optimizer.zero_grad()
+        for optimizer in optimizers.values():
+            optimizer.zero_grad()
 
         # compute loss
         pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).sum()
         reg_loss = torch.norm(predictor.predictor.linear1, 1)
+        noise_loss = (pred_noise - sem.noises).pow(2).sum()
         loss = pred_loss + config.reg_lambda * reg_loss
 
         # ground truth loss
@@ -273,12 +282,16 @@ def predict(sem, config):
         reg_loss_sum += reg_loss.item()
         total_loss_sum += loss.item()
 
+        noise_loss_sum += noise_loss.item()
+
         loss.backward()
+        noise_loss.backward()
 
         # heuristic. we know that the true matrix is lower triangular.
         predictor.predictor.linear1.grad.tril_(-1)
 
-        optimizer.step()
+        for optimizer in optimizers.values():
+            optimizer.step()
 
 
         if not use_random_policy:
@@ -308,11 +321,12 @@ def predict(sem, config):
             print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, total_loss_sum / config.log_iters))
             print('prediction loss:     ', pred_loss_sum / config.log_iters)
             print('regularization loss: ', reg_loss_sum / config.log_iters)
+            print('noise loss:', noise_loss_sum / config.log_iters)
             print('obs  ', pretty(Z_observational))
             print('pred ', pretty(Z_pred_intervention))
             print('true ', pretty(Z_true_intervention))
             print('noise', pretty(sem.noises))
-            print('pred noise:', pretty(predictor.noise))
+            print('pred noise:', pretty(pred_noise))
             print()
 
             w_true = sem.graph.weights[1,:,:] + sem.roots
@@ -323,6 +337,7 @@ def predict(sem, config):
             stats['loss']['pred'].append(pred_loss_sum / config.log_iters)
             stats['loss']['reg'].append(reg_loss_sum / config.log_iters)
             stats['loss']['total'].append(total_loss_sum / config.log_iters)
+            stats['loss']['noise'].append(noise_loss_sum / config.log_iters)
 
             stats['ground_loss']['pred'].append(ground_pred / config.log_iters)
             stats['ground_loss']['reg'].append(ground_reg)
