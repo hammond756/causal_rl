@@ -267,28 +267,8 @@ def predict(sem, config):
         # heuristic. we know that the true matrix is lower triangular.
         predictor.linear1.grad.tril_(-1)
 
-        
-        if should_log:
-            print('old model weights')
-            print_pretty(predictor.linear1)
-            if config.predictor == 'ordered':
-                print('std', predictor.std)
-            print()
-
-            print('gradients')
-            print_pretty(predictor.linear1.grad)
-            if config.predictor == 'ordered':
-                print('std', predictor.std.grad)
-            print()
-
         optimizer.step()
 
-        if should_log:
-            print('new model weights')
-            print_pretty(predictor.linear1)
-            if config.predictor == 'ordered':
-                print('std', predictor.std)
-            print()
 
         if not use_random_policy:
             policy_optim.zero_grad()
@@ -351,32 +331,5 @@ def predict(sem, config):
     stats['true_weights'] = w_true
     stats['model_weights'] = w_model
     stats['config'] = config
-
-        im = ax[0][2].matshow(diff.abs(), vmin=0, vmax=1)
-        plt.colorbar(mappable=im, ax=ax[0][2])
-        ax[0][2].set_title('weight diff', pad=23)
-
-        ax[0][1].plot(iter_log, loss_log)
-        ax[0][1].set_title('loss')
-
-        ax[0][0].plot(iter_log, causal_err)
-        ax[0][0].set_title('causal_err')
-        
-        if not use_random_policy:
-            y_plot = [torch.tensor(y) for y in zip(*action_probs)]
-            y_plot = torch.stack(y_plot, dim=0)
-            x_plot = torch.arange(y_plot.shape[1])
-            ax[1][2].stackplot(x_plot, y_plot, labels=variables.tolist())
-            ax[1][2].legend()
-            ax[1][2].set_title('action_probs')
-
-            ax[1][0].plot(iter_log, reward_log)
-            ax[1][0].set_title('reward')
-
-            bar(ax[1][1], action_prob.detach(), labels=variables.tolist())
-            ax[1][1].set_title('final action prob')
-        
-        plt.tight_layout()
-        plt.savefig(config.output_dir + '/stats.png')
     
     return stats
