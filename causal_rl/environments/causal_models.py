@@ -71,7 +71,7 @@ stacked_chain = torch.tensor([
      [0, 0, 0, 0, 1, 0, 0]]
 ])
 
-causal_models = {
+directed_edges = {
     'chain' : chain,
     'common_cause' : common_cause,
     'common_effect' : common_effect,
@@ -79,4 +79,18 @@ causal_models = {
     'linear_mountaincar' : linear_mountaincar,
     'independent' : independent,
     'stacked_chain' : stacked_chain
+}
+
+specified_common_effect = torch.tensor([
+    [[0, 0, 0],
+     [0, 0, 0],
+     [0, 0, 0]],
+    [[0, 0, 0],
+     [0, 0, 0],
+     [-0.1316, -0.7984, 0]]
+])
+
+causal_models = {
+    'specified_common_effect' : specified_common_effect,
+    'specified_chain' : chain
 }

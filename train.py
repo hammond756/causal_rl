@@ -4,10 +4,10 @@ import pickle
 import uuid
 import os
 
-from causal_rl.sem import StructuralEquationModel
+from causal_rl.sem import StructuralEquationModel, DirectedAcyclicGraph
 from causal_rl.sem.utils import draw
 from causal_rl.train import predict, PredictArgumentParser
-from causal_rl.environments import causal_models
+from causal_rl.environments import causal_models, directed_edges
 
 def save_configuration(config):
     """
@@ -33,8 +33,6 @@ if __name__ == '__main__':
     if config.dag_name is 'random':
         assert 'random_dag' in vars(config), 'Size is required for a random graph'
 
-    graph = causal_models.get(config.dag_name)
-
     if not config.output_dir:
         _id = str(uuid.uuid1())
         output_dir = os.path.join('experiments', 'inbox', str(_id))
@@ -49,7 +47,12 @@ if __name__ == '__main__':
 
     # initialize causal model
     if config.dag_name != 'random':
-        sem = StructuralEquationModel.random_with_edges(graph, *config.noise_dist)
+        if config.random_weights:
+            graph = directed_edges.get(config.dag_name)
+            sem = StructuralEquationModel.random_with_edges(graph, *config.noise_dist)
+        else:
+            graph = DirectedAcyclicGraph(causal_models.get(config.dag_name))
+            sem = StructuralEquationModel(graph, *config.noise_dist)
     else:
         args = config.random_dag + config.noise_dist
         sem = StructuralEquationModel.random(*args)

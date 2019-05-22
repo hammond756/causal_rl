@@ -79,8 +79,9 @@ class PredictArgumentParser(argparse.ArgumentParser):
         super(PredictArgumentParser, self).__init__(fromfile_prefix_chars='@')
 
         self.add_argument('--dag_name', type=str, required=True)
-        self.add_argument('--predictor', type=str, required=True)
+        self.add_argument('--random_weights', type=str2bool, required=False, default=True)
         self.add_argument('--random_dag', type=float, nargs=2, required=False)
+        self.add_argument('--predictor', type=str, required=True)
         self.add_argument('--n_iters', type=int, default=50000)
         self.add_argument('--log_iters', type=int, default=1000)
         self.add_argument('--use_random', type=str2bool, default=False)
