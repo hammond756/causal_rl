@@ -184,6 +184,10 @@ def predict(sem, config):
     predictor = predictors.get(config.predictor)(sem)
     optimizer = torch.optim.Adam(predictor.parameters(), lr=config.lr)
 
+    # intialze ground truth to compared learned model against
+    ground_truth_predictor = predictors.get(config.predictor)(sem)
+    ground_truth_predictor.linear1 = nn.Parameter(sem.graph.weights[1,:,:] + sem.roots.float())
+
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
     if not use_random_policy:
@@ -193,14 +197,32 @@ def predict(sem, config):
         # policy_baseline = 0
 
     # containers for statistics
-    loss_log = []
-    action_probs = []
-    loss_sum = 0
-    iter_log = []
+    stats = {
+        'loss' : {
+            'pred' : [],
+            'reg' : [],
+            'total' : []
+        },
+        'ground_loss' : {
+            'pred' : [],
+            'reg' : [],
+            'total' : []
+        },
+        'action_probs' : [],
+        'iterations' : [],
+        'reward' : [],
+        'causal_err' : []
+    }
+
+    pred_loss_sum = 0
+    reg_loss_sum = 0
+    total_loss_sum = 0
+
+    ground_pred = 0
+    ground_reg = torch.norm(ground_truth_predictor.linear1, 1).item()
+
     action_loss_sum = 0
     reward_sum = 0
-    reward_log = []
-    causal_err = []
 
     for iteration in range(n_iterations):
 
@@ -232,7 +254,13 @@ def predict(sem, config):
         reg_loss = torch.norm(predictor.linear1, 1)
         loss = pred_loss + config.reg_lambda * reg_loss
 
-        loss_sum += pred_loss.item()
+        # ground truth loss
+        ground_pred += (ground_truth_predictor(Z_observational, intervention) - Z_true_intervention).pow(2).sum().item()
+
+        pred_loss_sum += pred_loss.item()
+        reg_loss_sum += reg_loss.item()
+        total_loss_sum += loss.item()
+
         loss.backward()
 
         # heuristic. we know that the true matrix is lower triangular.
@@ -285,7 +313,9 @@ def predict(sem, config):
 
         if should_log:
             print()
-            print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, loss_sum / config.log_iters))
+            print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, total_loss_sum / config.log_iters))
+            print('prediction loss:     ', pred_loss_sum / config.log_iters)
+            print('regularization loss: ', reg_loss_sum / config.log_iters)
             print('obs  ', pretty(Z_observational))
             print('pred ', pretty(Z_pred_intervention))
             print('true ', pretty(Z_true_intervention))
@@ -295,21 +325,31 @@ def predict(sem, config):
             w_true = sem.graph.weights[1,:,:] + sem.roots
             w_model = predictor.linear1.detach()
             diff = (w_true - w_model)
-            causal_err.append(diff.abs().sum().item())
+            stats['causal_err'].append(diff.abs().sum().item())
 
-            loss_log.append(loss_sum / config.log_iters)
-            iter_log.append(iteration)
+            stats['loss']['pred'].append(pred_loss_sum / config.log_iters)
+            stats['loss']['reg'].append(reg_loss_sum / config.log_iters)
+            stats['loss']['total'].append(total_loss_sum / config.log_iters)
 
-            
-            loss_sum = 0
+            stats['ground_loss']['pred'].append(ground_pred / config.log_iters)
+            stats['ground_loss']['reg'].append(ground_reg)
+            stats['ground_loss']['total'].append(ground_pred / config.log_iters + config.reg_lambda * ground_reg)
+
+            stats['iterations'].append(iteration)
+
+            pred_loss_sum = 0
+            reg_loss_sum = 0
+            total_loss_sum = 0
+            ground_pred = 0
 
             if not use_random_policy:
-                action_probs.append(action_prob)
-                reward_log.append(reward_sum / config.log_iters)
+                stats['action_probs'].append(action_prob)
+                stats['reward'].append(reward_sum / config.log_iters)
                 reward_sum = 0
-
-    if config.plot:
-        fig, ax = plt.subplots(2,3)
+    
+    stats['true_weights'] = w_true
+    stats['model_weights'] = w_model
+    stats['config'] = config
 
         im = ax[0][2].matshow(diff.abs(), vmin=0, vmax=1)
         plt.colorbar(mappable=im, ax=ax[0][2])
@@ -338,12 +378,4 @@ def predict(sem, config):
         plt.tight_layout()
         plt.savefig(config.output_dir + '/stats.png')
     
-    return {
-        'true_weights' : w_true,
-        'model_weights' : w_model,
-        'loss' : loss_log,
-        'causal_err' : causal_err,
-        'action_probs' : action_probs if not config.use_random else None,
-        'reward' : reward_log if not config.use_random else None,
-        'config' : config
-    }
+    return stats
