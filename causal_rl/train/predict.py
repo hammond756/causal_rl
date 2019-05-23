@@ -324,6 +324,7 @@ def predict(sem, config):
             pred_loss_sum = 0
             reg_loss_sum = 0
             total_loss_sum = 0
+            noise_err_sum = 0
 
             if not use_random_policy:
                 stats['action_probs'].append(action_prob)
