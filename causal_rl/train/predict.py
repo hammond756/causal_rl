@@ -192,10 +192,13 @@ def predict(sem, config):
     variables = torch.arange(sem.dim)
 
     # init predictor. This model takes in sampled values of X and
-    # tries to predict X under intervention X_i = 0. The learned
+    # tries to predict X under intervention X_i = x. The learned
     # weights model the weights on the causal model.
     predictor = predictors.get(config.predictor)(sem)
-    optimizer = torch.optim.Adam(predictor.parameters(), lr=config.lr)
+    optimizer = torch.optim.SGD([
+        {'params' : predictor.predictor.parameters(), 'lr' : config.lr},
+        {'params' : predictor.infer_noise.parameters(), 'lr' : 0.1}
+    ])
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
