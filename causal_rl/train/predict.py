@@ -315,7 +315,7 @@ def predict(sem, config):
             print('pred noise:', pretty(predictor.noise))
             print()
 
-            w_true = sem.graph.weights[1,:,:] + sem.roots
+            w_true = sem.graph.weights[1,:,:]
             w_model = predictor.predictor.linear1.detach()
             diff = (w_true - w_model)
             stats['causal_err'].append(diff.abs().sum().item())
