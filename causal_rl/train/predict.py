@@ -197,10 +197,6 @@ def predict(sem, config):
     predictor = predictors.get(config.predictor)(sem)
     optimizer = torch.optim.Adam(predictor.parameters(), lr=config.lr)
 
-    # intialze ground truth to compared learned model against
-    ground_truth_predictor = predictors.get(config.predictor)(sem)
-    ground_truth_predictor.linear1 = nn.Parameter(sem.graph.weights[1,:,:] + sem.roots.float())
-
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
     if not use_random_policy:
@@ -216,11 +212,6 @@ def predict(sem, config):
             'reg' : [],
             'total' : []
         },
-        'ground_loss' : {
-            'pred' : [],
-            'reg' : [],
-            'total' : []
-        },
         'action_probs' : [],
         'iterations' : [],
         'reward' : [],
@@ -230,10 +221,6 @@ def predict(sem, config):
     pred_loss_sum = 0
     reg_loss_sum = 0
     total_loss_sum = 0
-
-    ground_pred = 0
-    ground_reg = torch.norm(ground_truth_predictor.linear1, 1).item()
-
     action_loss_sum = 0
     reward_sum = 0
 
@@ -266,13 +253,12 @@ def predict(sem, config):
         reg_loss = torch.norm(predictor.predictor.linear1, 1)
         loss = pred_loss + config.reg_lambda * reg_loss
 
-        # ground truth loss
-        ground_pred += (ground_truth_predictor(Z_observational, intervention) - Z_true_intervention).pow(2).sum().item()
-
+        # accumulate losses
         pred_loss_sum += pred_loss.item()
         reg_loss_sum += reg_loss.item()
         total_loss_sum += loss.item()
 
+        # compute gradients
         loss.backward()
 
         # heuristic. we know that the true matrix is lower triangular.
@@ -323,17 +309,11 @@ def predict(sem, config):
             stats['loss']['pred'].append(pred_loss_sum / config.log_iters)
             stats['loss']['reg'].append(reg_loss_sum / config.log_iters)
             stats['loss']['total'].append(total_loss_sum / config.log_iters)
-
-            stats['ground_loss']['pred'].append(ground_pred / config.log_iters)
-            stats['ground_loss']['reg'].append(ground_reg)
-            stats['ground_loss']['total'].append(ground_pred / config.log_iters + config.reg_lambda * ground_reg)
-
             stats['iterations'].append(iteration)
 
             pred_loss_sum = 0
             reg_loss_sum = 0
             total_loss_sum = 0
-            ground_pred = 0
 
             if not use_random_policy:
                 stats['action_probs'].append(action_prob)
