@@ -176,7 +176,8 @@ class TwoStepPredictor(nn.Module):
     def forward(self, observation, intervention):
         noise = self.infer_noise(observation)
         self.noise = noise
-        return self.predictor(observation, noise, intervention)
+        prediction = self.predictor(observation, noise, intervention)
+        return prediction
 
 predictors = {
     'repeated' : Predictor,
@@ -218,12 +219,15 @@ def predict(sem, config):
         'action_probs' : [],
         'iterations' : [],
         'reward' : [],
-        'causal_err' : []
+        'causal_err' : [],
+        'noise_err' : []
     }
 
     pred_loss_sum = 0
     reg_loss_sum = 0
     total_loss_sum = 0
+    noise_err_sum = 0
+
     action_loss_sum = 0
     reward_sum = 0
 
@@ -252,7 +256,7 @@ def predict(sem, config):
         optimizer.zero_grad()
 
         # compute loss
-        pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).sum()
+        pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).mean()
         reg_loss = torch.norm(predictor.predictor.linear1, 1)
         loss = pred_loss + config.reg_lambda * reg_loss
 
@@ -260,6 +264,8 @@ def predict(sem, config):
         pred_loss_sum += pred_loss.item()
         reg_loss_sum += reg_loss.item()
         total_loss_sum += loss.item()
+        
+        noise_err_sum += (predictor.noise - sem.noises).pow(2).mean().item()
 
         # compute gradients
         loss.backward()
@@ -312,6 +318,7 @@ def predict(sem, config):
             stats['loss']['pred'].append(pred_loss_sum / config.log_iters)
             stats['loss']['reg'].append(reg_loss_sum / config.log_iters)
             stats['loss']['total'].append(total_loss_sum / config.log_iters)
+            stats['noise_err'].append(noise_err_sum / config.log_iters)
             stats['iterations'].append(iteration)
 
             pred_loss_sum = 0
