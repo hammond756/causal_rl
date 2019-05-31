@@ -2,6 +2,12 @@
 
 Repo for my master thesis on the intersection between causality and reinforcement learning
 
+## FIRST
+
+```
+pip install -r requirements.txt
+```
+
 ## Training
 
 The entry point for the code is `train.py` at the root of the repository. There are scripts in `scripts/` that call the file using the correct arguments. These are:
