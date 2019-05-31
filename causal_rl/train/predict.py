@@ -139,10 +139,10 @@ class OrderedPredictor(nn.Module):
         # heuristic: root nodes should have self-connection of 1 to carry noise to prediction
         self.linear1 = nn.Parameter(torch.randn((self.dim,self.dim)).tril_(-1))
     
-    def forward(self, observation, noise, intervention):
+    def forward(self, noise, intervention):
         target, value = intervention
 
-        output = observation.clone()
+        output = torch.zeros_like(noise)
 
         for i in range(self.dim):
             if i == target:
@@ -176,7 +176,7 @@ class TwoStepPredictor(nn.Module):
     def forward(self, observation, intervention):
         noise = self.infer_noise(observation)
         self.noise = noise
-        prediction = self.predictor(observation, noise, intervention)
+        prediction = self.predictor(noise, intervention)
         return prediction
 
 predictors = {
