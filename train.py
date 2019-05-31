@@ -6,7 +6,7 @@ import os
 
 from causal_rl.sem import StructuralEquationModel, DirectedAcyclicGraph
 from causal_rl.sem.utils import draw
-from causal_rl.train import predict, PredictArgumentParser
+from causal_rl.train import train_active, PredictArgumentParser
 from causal_rl.environments import causal_models, directed_edges
 
 def save_configuration(config):
@@ -57,7 +57,7 @@ if __name__ == '__main__':
         args = config.random_dag + config.noise_dist
         sem = StructuralEquationModel.random(*args)
 
-    stats = predict(sem, config)
+    stats = train_active(sem, config)
 
     # # # # #
     # save all the things

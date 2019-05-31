@@ -184,7 +184,7 @@ predictors = {
     'two_step' : TwoStepPredictor
 }
 
-def predict(sem, config):
+def train_active(sem, config):
 
     n_iterations = config.n_iters
     use_random_policy = config.use_random
@@ -203,11 +203,10 @@ def predict(sem, config):
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
-    if not use_random_policy:
-        policy = SimplePolicy(sem.dim)
-        policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
-        # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
-        # policy_baseline = 0
+    policy = SimplePolicy(sem.dim)
+    policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
+    # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
+    # policy_baseline = 0
 
     # containers for statistics
     stats = {
@@ -235,21 +234,24 @@ def predict(sem, config):
 
         should_log = (iteration+1) % config.log_iters == 0
 
-        if use_random_policy:
-            action_idx = random_policy(sem.dim)
-        else:
-            # sample action from policy network
-            action_logprob = policy()
-            action_prob = action_logprob.exp()
-            action_idx = torch.multinomial(action_prob, 1).long().item()
+        # sample action from policy network
+        action_logprob = policy()
+        action_prob = action_logprob.exp()
+        action_idx = torch.multinomial(action_prob, 1).long().item()
         
+        # covert action to intervention
         action = variables[action_idx]
         inter_value = config.intervention_value
         intervention = (action, inter_value)
 
+        # sample observation and target
         Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
-        Z_pred_intervention = predictor(Z_observational, intervention)
         Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=intervention)
+        
+        # # # #
+        # Optimze causal model
+        # # # #
+        Z_pred_intervention = predictor(Z_observational, intervention)
 
         # Backprop on predictor. Adjust weights s.t. predictions get closer
         # to truth.
@@ -275,29 +277,31 @@ def predict(sem, config):
 
         optimizer.step()
 
+        # # # #
+        # Optimze policy network
+        # # # #
+        policy_optim.zero_grad()
 
-        if not use_random_policy:
-            policy_optim.zero_grad()
+        # policy network gets rewarded for doing interventions
+        # that confuse the predictor.
+        reward = loss.item() / 10
+        reward_sum += reward
 
-            # policy network gets rewarded for doing interventions
-            # that confuse the predictor.
-            reward = loss.item() / 10
-            reward_sum += reward
+        # policy loss makes high reward actions more probable to be intervened on
+        # (ie. actions that confuse the predictor)
+        log_prob = action_logprob[action_idx]
+        action_loss = -reward * log_prob
 
-            # policy loss makes high reward actions more probable to be intervened on
-            # (ie. actions that confuse the predictor)
-            log_prob = action_logprob[action_idx]
-            action_loss = -reward * log_prob
+        # action_loss = -(reward-policy_baseline) * log_prob
+        # policy_baseline = policy_baseline * 0.997 + reward * 0.003
+        # action_loss_sum += action_loss.item()
+        if entr_loss_coeff > 0:
+                entr = -(action_logprob * action_prob).sum()
+                action_loss -= entr_loss_coeff * entr
+        action_loss.backward()
+        policy_optim.step()
 
-            # action_loss = -(reward-policy_baseline) * log_prob
-            # policy_baseline = policy_baseline * 0.997 + reward * 0.003
-            # action_loss_sum += action_loss.item()
-            if entr_loss_coeff > 0:
-                 entr = -(action_logprob * action_prob).sum()
-                 action_loss -= entr_loss_coeff * entr
-            action_loss.backward()
-            policy_optim.step()
-
+        # print training progress and save statistics
         if should_log:
             print()
             print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, total_loss_sum / config.log_iters))
