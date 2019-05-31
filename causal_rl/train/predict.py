@@ -153,9 +153,9 @@ class OrderedPredictor(nn.Module):
 
         return output
 
-class NoiseInferencer(torch.nn.Module):
+class Abductor(torch.nn.Module):
     def __init__(self, dim):
-        super(NoiseInferencer, self).__init__()
+        super(Abductor, self).__init__()
         self.dim = dim
         self.l1 = torch.nn.Linear(dim, dim)
     
@@ -170,13 +170,13 @@ class TwoStepPredictor(nn.Module):
         self.dim = sem.dim
         self.noise = None
 
-        self.infer_noise = NoiseInferencer(self.dim)
-        self.predictor = OrderedPredictor(self.dim)
+        self.abduct = Abductor(self.dim)
+        self.predict = OrderedPredictor(self.dim)
 
     def forward(self, observation, intervention):
-        noise = self.infer_noise(observation)
+        noise = self.abduct(observation)
         self.noise = noise
-        prediction = self.predictor(noise, intervention)
+        prediction = self.predict(noise, intervention)
         return prediction
 
 predictors = {
@@ -184,7 +184,7 @@ predictors = {
     'two_step' : TwoStepPredictor
 }
 
-def train_active(sem, config):
+def train(sem, config):
 
     n_iterations = config.n_iters
     use_random_policy = config.use_random
@@ -197,16 +197,17 @@ def train_active(sem, config):
     # weights model the weights on the causal model.
     predictor = predictors.get(config.predictor)(sem)
     optimizer = torch.optim.SGD([
-        {'params' : predictor.predictor.parameters(), 'lr' : config.lr},
-        {'params' : predictor.infer_noise.parameters(), 'lr' : 0.1}
+        {'params' : predictor.predict.parameters(), 'lr' : config.lr},
+        {'params' : predictor.abduct.parameters(), 'lr' : 0.1}
     ])
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
-    policy = SimplePolicy(sem.dim)
-    policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
-    # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
-    # policy_baseline = 0
+    if not config.use_random:
+        policy = SimplePolicy(sem.dim)
+        policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
+        # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
+        # policy_baseline = 0
 
     # containers for statistics
     stats = {
@@ -227,17 +228,21 @@ def train_active(sem, config):
     total_loss_sum = 0
     noise_err_sum = 0
 
-    action_loss_sum = 0
-    reward_sum = 0
+    if not config.use_random:
+        action_loss_sum = 0
+        reward_sum = 0
 
     for iteration in range(n_iterations):
 
         should_log = (iteration+1) % config.log_iters == 0
 
-        # sample action from policy network
-        action_logprob = policy()
-        action_prob = action_logprob.exp()
-        action_idx = torch.multinomial(action_prob, 1).long().item()
+        if not config.use_random:
+            # sample action from policy network
+            action_logprob = policy()
+            action_prob = action_logprob.exp()
+            action_idx = torch.multinomial(action_prob, 1).long().item()
+        else:
+            action_idx = random_policy(sem.dim)
         
         # covert action to intervention
         action = variables[action_idx]
@@ -259,7 +264,7 @@ def train_active(sem, config):
 
         # compute loss
         pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).mean()
-        reg_loss = torch.norm(predictor.predictor.linear1, 1)
+        reg_loss = torch.norm(predictor.predict.linear1, 1)
         loss = pred_loss + config.reg_lambda * reg_loss
 
         # accumulate losses
@@ -273,33 +278,34 @@ def train_active(sem, config):
         loss.backward()
 
         # heuristic. we know that the true matrix is lower triangular.
-        predictor.predictor.linear1.grad.tril_(-1)
+        predictor.predict.linear1.grad.tril_(-1)
 
         optimizer.step()
 
-        # # # #
-        # Optimze policy network
-        # # # #
-        policy_optim.zero_grad()
+        if not config.use_random:
+            # # # #
+            # Optimze policy network
+            # # # #
+            policy_optim.zero_grad()
 
-        # policy network gets rewarded for doing interventions
-        # that confuse the predictor.
-        reward = loss.item() / 10
-        reward_sum += reward
+            # policy network gets rewarded for doing interventions
+            # that confuse the predictor.
+            reward = loss.item() / 10
+            reward_sum += reward
 
-        # policy loss makes high reward actions more probable to be intervened on
-        # (ie. actions that confuse the predictor)
-        log_prob = action_logprob[action_idx]
-        action_loss = -reward * log_prob
+            # policy loss makes high reward actions more probable to be intervened on
+            # (ie. actions that confuse the predictor)
+            log_prob = action_logprob[action_idx]
+            action_loss = -reward * log_prob
 
-        # action_loss = -(reward-policy_baseline) * log_prob
-        # policy_baseline = policy_baseline * 0.997 + reward * 0.003
-        # action_loss_sum += action_loss.item()
-        if entr_loss_coeff > 0:
-                entr = -(action_logprob * action_prob).sum()
-                action_loss -= entr_loss_coeff * entr
-        action_loss.backward()
-        policy_optim.step()
+            # action_loss = -(reward-policy_baseline) * log_prob
+            # policy_baseline = policy_baseline * 0.997 + reward * 0.003
+            # action_loss_sum += action_loss.item()
+            if entr_loss_coeff > 0:
+                    entr = -(action_logprob * action_prob).sum()
+                    action_loss -= entr_loss_coeff * entr
+            action_loss.backward()
+            policy_optim.step()
 
         # print training progress and save statistics
         if should_log:
@@ -315,7 +321,7 @@ def train_active(sem, config):
             print()
 
             w_true = sem.graph.weights[1,:,:]
-            w_model = predictor.predictor.linear1.detach()
+            w_model = predictor.predict.linear1.detach()
             diff = (w_true - w_model)
             stats['causal_err'].append(diff.abs().sum().item())
 
@@ -330,7 +336,7 @@ def train_active(sem, config):
             total_loss_sum = 0
             noise_err_sum = 0
 
-            if not use_random_policy:
+            if not config.use_random:
                 stats['action_probs'].append(action_prob)
                 stats['reward'].append(reward_sum / config.log_iters)
                 reward_sum = 0
@@ -340,118 +346,3 @@ def train_active(sem, config):
     stats['config'] = config
     
     return stats
-
-def train_random(sem, config):
-
-    n_iterations = config.n_iters
-    use_random_policy = config.use_random
-    entr_loss_coeff = config.entr_loss_coeff
-
-    variables = torch.arange(sem.dim)
-
-    # init predictor. This model takes in sampled values of X and
-    # tries to predict X under intervention X_i = x. The learned
-    # weights model the weights on the causal model.
-    predictor = predictors.get(config.predictor)(sem)
-    optimizer = torch.optim.SGD([
-        {'params' : predictor.predictor.parameters(), 'lr' : config.lr},
-        {'params' : predictor.infer_noise.parameters(), 'lr' : 0.1}
-    ])
-
-    # containers for statistics
-    stats = {
-        'loss' : {
-            'pred' : [],
-            'reg' : [],
-            'total' : []
-        },
-        'iterations' : [],
-        'causal_err' : [],
-        'noise_err' : []
-    }
-
-    pred_loss_sum = 0
-    reg_loss_sum = 0
-    total_loss_sum = 0
-    noise_err_sum = 0
-
-    for iteration in range(n_iterations):
-
-        should_log = (iteration+1) % config.log_iters == 0
-
-        # sample action from policy network
-        action_logprob = random_policy(sem.dim)
-        
-        # covert action to intervention
-        action = variables[action_idx]
-        inter_value = config.intervention_value
-        intervention = (action, inter_value)
-
-        # sample observation and target
-        Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
-        Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=intervention)
-        
-        # # # #
-        # Optimze causal model
-        # # # #
-        Z_pred_intervention = predictor(Z_observational, intervention)
-
-        # Backprop on predictor. Adjust weights s.t. predictions get closer
-        # to truth.
-        optimizer.zero_grad()
-
-        # compute loss
-        pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).mean()
-        reg_loss = torch.norm(predictor.predictor.linear1, 1)
-        loss = pred_loss + config.reg_lambda * reg_loss
-
-        # accumulate losses
-        pred_loss_sum += pred_loss.item()
-        reg_loss_sum += reg_loss.item()
-        total_loss_sum += loss.item()
-        
-        noise_err_sum += (predictor.noise - sem.noises).pow(2).mean().item()
-
-        # compute gradients
-        loss.backward()
-
-        # heuristic. we know that the true matrix is lower triangular.
-        predictor.predictor.linear1.grad.tril_(-1)
-
-        optimizer.step()
-
-        # print training progress and save statistics
-        if should_log:
-            print()
-            print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, total_loss_sum / config.log_iters))
-            print('prediction loss:     ', pred_loss_sum / config.log_iters)
-            print('regularization loss: ', reg_loss_sum / config.log_iters)
-            print('obs  ', pretty(Z_observational))
-            print('pred ', pretty(Z_pred_intervention))
-            print('true ', pretty(Z_true_intervention))
-            print('noise', pretty(sem.noises))
-            print('pred noise:', pretty(predictor.noise))
-            print()
-
-            w_true = sem.graph.weights[1,:,:]
-            w_model = predictor.predictor.linear1.detach()
-            diff = (w_true - w_model)
-            stats['causal_err'].append(diff.abs().sum().item())
-
-            stats['loss']['pred'].append(pred_loss_sum / config.log_iters)
-            stats['loss']['reg'].append(reg_loss_sum / config.log_iters)
-            stats['loss']['total'].append(total_loss_sum / config.log_iters)
-            stats['noise_err'].append(noise_err_sum / config.log_iters)
-            stats['iterations'].append(iteration)
-
-            pred_loss_sum = 0
-            reg_loss_sum = 0
-            total_loss_sum = 0
-            noise_err_sum = 0
-    
-    stats['true_weights'] = w_true
-    stats['model_weights'] = w_model
-    stats['config'] = config
-    
-    return stats
-
