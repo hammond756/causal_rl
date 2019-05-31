@@ -12,7 +12,7 @@ pip install -r requirements.txt
 
 The entry point for the code is `train.py` at the root of the repository. There are scripts in `scripts/` that call the file using the correct arguments. These are:
 
-```
+``` bash
 --intervention_value 5 # value to use when intervening on the enviroment
 --n_iters 10000 \ # number of training iterations
 --use_random True \ # whether to use a random or active intervention policy
