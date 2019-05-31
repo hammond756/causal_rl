@@ -340,3 +340,118 @@ def train_active(sem, config):
     stats['config'] = config
     
     return stats
+
+def train_random(sem, config):
+
+    n_iterations = config.n_iters
+    use_random_policy = config.use_random
+    entr_loss_coeff = config.entr_loss_coeff
+
+    variables = torch.arange(sem.dim)
+
+    # init predictor. This model takes in sampled values of X and
+    # tries to predict X under intervention X_i = x. The learned
+    # weights model the weights on the causal model.
+    predictor = predictors.get(config.predictor)(sem)
+    optimizer = torch.optim.SGD([
+        {'params' : predictor.predictor.parameters(), 'lr' : config.lr},
+        {'params' : predictor.infer_noise.parameters(), 'lr' : 0.1}
+    ])
+
+    # containers for statistics
+    stats = {
+        'loss' : {
+            'pred' : [],
+            'reg' : [],
+            'total' : []
+        },
+        'iterations' : [],
+        'causal_err' : [],
+        'noise_err' : []
+    }
+
+    pred_loss_sum = 0
+    reg_loss_sum = 0
+    total_loss_sum = 0
+    noise_err_sum = 0
+
+    for iteration in range(n_iterations):
+
+        should_log = (iteration+1) % config.log_iters == 0
+
+        # sample action from policy network
+        action_logprob = random_policy(sem.dim)
+        
+        # covert action to intervention
+        action = variables[action_idx]
+        inter_value = config.intervention_value
+        intervention = (action, inter_value)
+
+        # sample observation and target
+        Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
+        Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=intervention)
+        
+        # # # #
+        # Optimze causal model
+        # # # #
+        Z_pred_intervention = predictor(Z_observational, intervention)
+
+        # Backprop on predictor. Adjust weights s.t. predictions get closer
+        # to truth.
+        optimizer.zero_grad()
+
+        # compute loss
+        pred_loss = (Z_pred_intervention - Z_true_intervention).pow(2).mean()
+        reg_loss = torch.norm(predictor.predictor.linear1, 1)
+        loss = pred_loss + config.reg_lambda * reg_loss
+
+        # accumulate losses
+        pred_loss_sum += pred_loss.item()
+        reg_loss_sum += reg_loss.item()
+        total_loss_sum += loss.item()
+        
+        noise_err_sum += (predictor.noise - sem.noises).pow(2).mean().item()
+
+        # compute gradients
+        loss.backward()
+
+        # heuristic. we know that the true matrix is lower triangular.
+        predictor.predictor.linear1.grad.tril_(-1)
+
+        optimizer.step()
+
+        # print training progress and save statistics
+        if should_log:
+            print()
+            print('{} / {} \t\t loss: {}'.format(iteration+1, n_iterations, total_loss_sum / config.log_iters))
+            print('prediction loss:     ', pred_loss_sum / config.log_iters)
+            print('regularization loss: ', reg_loss_sum / config.log_iters)
+            print('obs  ', pretty(Z_observational))
+            print('pred ', pretty(Z_pred_intervention))
+            print('true ', pretty(Z_true_intervention))
+            print('noise', pretty(sem.noises))
+            print('pred noise:', pretty(predictor.noise))
+            print()
+
+            w_true = sem.graph.weights[1,:,:]
+            w_model = predictor.predictor.linear1.detach()
+            diff = (w_true - w_model)
+            stats['causal_err'].append(diff.abs().sum().item())
+
+            stats['loss']['pred'].append(pred_loss_sum / config.log_iters)
+            stats['loss']['reg'].append(reg_loss_sum / config.log_iters)
+            stats['loss']['total'].append(total_loss_sum / config.log_iters)
+            stats['noise_err'].append(noise_err_sum / config.log_iters)
+            stats['iterations'].append(iteration)
+
+            pred_loss_sum = 0
+            reg_loss_sum = 0
+            total_loss_sum = 0
+            noise_err_sum = 0
+    
+    stats['true_weights'] = w_true
+    stats['model_weights'] = w_model
+    stats['config'] = config
+    
+    return stats
+

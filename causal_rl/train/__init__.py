@@ -1,1 +1,1 @@
-from .predict import train_active, PredictArgumentParser, OrderedPredictor, Predictor
+from .predict import train_active, train_random, PredictArgumentParser, OrderedPredictor, Predictor
