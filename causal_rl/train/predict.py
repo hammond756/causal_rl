@@ -137,7 +137,7 @@ class OrderedPredictor(nn.Module):
 
         # heuristic: we know the true weights are lower triangular
         # heuristic: root nodes should have self-connection of 1 to carry noise to prediction
-        self.linear1 = nn.Parameter(torch.randn((self.dim,self.dim))) # .tril(-1)
+        self.linear1 = nn.Parameter(torch.randn((self.dim,self.dim)).tril_(-1))
     
     def forward(self, noise, intervention):
         target, value = intervention
@@ -278,7 +278,7 @@ def train(sem, config):
         loss.backward()
 
         # heuristic. we know that the true matrix is lower triangular.
-        # predictor.predict.linear1.grad.tril_(-1)
+        predictor.predict.linear1.grad.tril_(-1)
 
         optimizer.step()
 
