@@ -238,13 +238,13 @@ def train(sem, config):
 
         if not config.use_random:
             # sample action from policy network
-            action_logprob = policy()
-            action_prob = action_logprob.exp()
-            action_idx = torch.multinomial(action_prob, 1).long().item()
-        else:
-            # action_idx = random_policy(sem.dim)
+            # action_logprob = policy()
+            # action_prob = action_logprob.exp()
+            # action_idx = torch.multinomial(action_prob, 1).long().item()
             import random
             action_idx = random.choice(sem.graph._child_indices)
+        else:
+            action_idx = random_policy(sem.dim)
         
         # covert action to intervention
         action = variables[action_idx]
