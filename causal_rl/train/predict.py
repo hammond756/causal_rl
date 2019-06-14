@@ -237,7 +237,7 @@ def train(sem, config):
         should_log = (iteration+1) % config.log_iters == 0
 
         if not config.use_random:
-            sample action from policy network
+            # sample action from policy network
             action_logprob = policy()
             action_prob = action_logprob.exp()
             action_idx = torch.multinomial(action_prob, 1).long().item()
