@@ -26,6 +26,14 @@ class DirectedAcyclicGraph(object):
                 diagonal[i] = 1
         
         return torch.diag(diagonal)
+    
+    @property
+    def _root_indices(self):
+        return torch.tensor([i for i in range(self.dim) if self.parents(i).nelement() == 0])
+
+    @property
+    def _child_indices(self):
+        return torch.tensor([i for i in range(self.dim) if self.parents(i).nelement() > 0])
 
     @property
     def edges(self):

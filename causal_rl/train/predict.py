@@ -242,7 +242,9 @@ def train(sem, config):
             action_prob = action_logprob.exp()
             action_idx = torch.multinomial(action_prob, 1).long().item()
         else:
-            action_idx = random_policy(sem.dim)
+            # action_idx = random_policy(sem.dim)
+            import random
+            action_idx = random.choice(sem.graph._child_indices)
         
         # covert action to intervention
         action = variables[action_idx]
