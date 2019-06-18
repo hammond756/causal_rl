@@ -7,7 +7,7 @@ class SimplePolicy(nn.Module):
         self.action_weight = nn.Parameter(torch.randn(dim))
 
     def forward(self):
-        action_logprob = torch.nn.functional.log_softmax(self.action_weight, dim=-1)
+        action_logprob = torch.log_softmax(self.action_weight, dim=-1)
         return action_logprob
 
 class RandomPolicy():
@@ -15,7 +15,9 @@ class RandomPolicy():
         self.dim = dim
 
     def __call__(self):
-        return torch.randint(0, self.dim, (1,)).long().item()
+        action_idx = torch.randint(0, self.dim, (1,)).long().item()
+        action_probs = torch.tensor([float(i == action_idx) for i in range(self.dim)])
+        return torch.log(action_probs)
 
 policies = {
     'simple' : SimplePolicy,

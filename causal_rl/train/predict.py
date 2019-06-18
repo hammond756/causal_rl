@@ -82,7 +82,7 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--predictor', type=str, required=True)
         self.add_argument('--n_iters', type=int, default=50000)
         self.add_argument('--log_iters', type=int, default=1000)
-        self.add_argument('--use_random', type=str2bool, default=False)
+        self.add_argument('--policy', type=str, default='random')
         self.add_argument('--entr_loss_coeff', type=float, default=0)
         self.add_argument('--output_dir', type=str, action=readable_dir)
         self.add_argument('--seed', type=int, default=None)
@@ -95,9 +95,7 @@ class PredictArgumentParser(argparse.ArgumentParser):
 def train(sem, config):
 
     n_iterations = config.n_iters
-    use_random_policy = config.use_random
     entr_loss_coeff = config.entr_loss_coeff
-
     variables = torch.arange(sem.dim)
 
     # init predictor. This model takes in sampled values of X and
@@ -111,9 +109,8 @@ def train(sem, config):
 
     # initialize policy. This model chooses an intervention on one of the nodes in X.
     # This choice is not based on the state of X.
-        
-    policy = policies.get('random')(sem.dim)
-    if not config.use_random:
+    policy = policies.get(config.policy)(sem.dim)
+    if isinstance(policy, nn.Module):
         policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
         # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
         # policy_baseline = 0
@@ -137,7 +134,7 @@ def train(sem, config):
     total_loss_sum = 0
     noise_err_sum = 0
 
-    if not config.use_random:
+    if isinstance(policy, nn.Module):
         action_loss_sum = 0
         reward_sum = 0
 
@@ -145,13 +142,12 @@ def train(sem, config):
 
         should_log = (iteration+1) % config.log_iters == 0
 
-        if not config.use_random:
-            # sample action from policy network
-            action_logprob = policy()
-            action_prob = action_logprob.exp()
-            action_idx = torch.multinomial(action_prob, 1).long().item()
-        else:
-            action_idx = policy()
+        # sample action from policy network
+        # action_logprob and action_prob are needed elsewhere to calculate the reward
+        # and entropy coefficient
+        action_logprob = policy()
+        action_prob = action_logprob.exp()
+        action_idx = torch.multinomial(action_prob, 1).long().item()
         
         # covert action to intervention
         action = variables[action_idx]
@@ -191,7 +187,7 @@ def train(sem, config):
 
         optimizer.step()
 
-        if not config.use_random:
+        if isinstance(policy, nn.Module):
             # # # #
             # Optimze policy network
             # # # #
@@ -245,7 +241,7 @@ def train(sem, config):
             total_loss_sum = 0
             noise_err_sum = 0
 
-            if not config.use_random:
+            if isinstance(policy, nn.Module):
                 stats['action_probs'].append(action_prob)
                 stats['reward'].append(reward_sum / config.log_iters)
                 reward_sum = 0
