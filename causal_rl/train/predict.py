@@ -141,10 +141,12 @@ def train(sem, config):
 
         should_log = (iteration+1) % config.log_iters == 0
 
+        Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
+
         # sample action from policy network
         # action_logprob and action_prob are needed elsewhere to calculate the reward
         # and entropy coefficient
-        action_logprob = policy()
+        action_logprob = policy(Z_observational)
         action_prob = action_logprob.exp()
         action_idx = torch.multinomial(action_prob, 1).long().item()
         
@@ -154,7 +156,6 @@ def train(sem, config):
         intervention = (action, inter_value)
 
         # sample observation and target
-        Z_observational = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
         Z_true_intervention = sem.counterfactual(z_prev=torch.zeros(sem.dim), intervention=intervention)
         
         # # # #
