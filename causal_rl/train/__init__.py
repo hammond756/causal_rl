@@ -1,1 +1,1 @@
-from .predict import train, PredictArgumentParser, OrderedPredictor, Predictor
+from causal_rl.train.predict import train, PredictArgumentParser
