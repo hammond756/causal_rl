@@ -24,8 +24,7 @@ class RandomPolicy():
         self.dim = dim
 
     def __call__(self, *args):
-        action_idx = torch.randint(0, self.dim, (1,)).long().item()
-        action_probs = torch.tensor([float(i == action_idx) for i in range(self.dim)])
+        action_probs = torch.tensor([1. / self.dim for _ in range(self.dim)])
         return torch.log(action_probs)
 
 policies = {
