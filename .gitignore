@@ -30,3 +30,6 @@ experiments/**
 .python-version
 .vs/
 .vscode
+
+scripts/**
+notebooks/**
