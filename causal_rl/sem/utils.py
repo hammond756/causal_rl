@@ -1,6 +1,7 @@
 import networkx as nx
 import matplotlib.pyplot as plt
 
+
 def draw(graph, path=None):
     # transpose because nx edges are (from, to) and DAGs are (to, from)
     edges = graph.t().nonzero().numpy()
@@ -19,4 +20,3 @@ def draw(graph, path=None):
         plt.show()
     else:
         plt.savefig(path, bbox_inches='tight')
-    

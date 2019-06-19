@@ -1,14 +1,18 @@
 import torch
 import torch.nn as nn
 
+
 class Predictor(nn.Module):
     def __init__(self, sem):
         super(Predictor, self).__init__()
         self.dim = sem.dim
 
         # heuristic: we know the true weights are lower triangular
-        # heuristic: root nodes should have self-connection of 1 to carry noise to prediction
-        self.linear1 = nn.Parameter(torch.randn((self.dim,self.dim)).tril_(-1) + sem.roots)
+        # heuristic: root nodes should have self-connection of 1 to
+        # carry noise to prediction
+        self.linear1 = nn.Parameter(
+            torch.randn((self.dim, self.dim)).tril_(-1) + sem.roots
+        )
 
     def _mask(self, vector, intervention):
         if intervention is None:
@@ -16,7 +20,7 @@ class Predictor(nn.Module):
 
         target, value = intervention
         vector.scatter_(dim=1, index=torch.tensor([[target]]), value=value)
-    
+
     def forward(self, features, intervention):
         # make a copy of the input, since _mask will modify in-place
         out = torch.tensor(features)
@@ -28,14 +32,18 @@ class Predictor(nn.Module):
 
         return out
 
+
 class OrderedPredictor(nn.Module):
     def __init__(self, dim):
         super(OrderedPredictor, self).__init__()
         self.dim = dim
 
         # heuristic: we know the true weights are lower triangular
-        # heuristic: root nodes should have self-connection of 1 to carry noise to prediction
-        self.linear1 = nn.Parameter(torch.randn((self.dim, self.dim)).tril_(-1))
+        # heuristic: root nodes should have self-connection of 1
+        # to carry noise to prediction
+        self.linear1 = nn.Parameter(
+            torch.randn((self.dim, self.dim)).tril_(-1)
+        )
 
     def forward(self, noise, intervention):
         target, value = intervention
@@ -47,9 +55,11 @@ class OrderedPredictor(nn.Module):
                 output[:, i] = value
                 continue
 
-            output[:, i] = self.linear1[i].matmul(output.clone().t()) + noise[:, i]
+            output[:, i] = self.linear1[i].matmul(output.clone().t()) \
+                + noise[:, i]
 
         return output
+
 
 class Abductor(torch.nn.Module):
     def __init__(self, dim):
@@ -59,7 +69,8 @@ class Abductor(torch.nn.Module):
 
     def forward(self, x):
         out = self.l1(x)
-        return torch.sigmoid(out) # if self.training else (out > 0.7).float()
+        return torch.sigmoid(out)  # if self.training else (out > 0.7).float()
+
 
 class TwoStepPredictor(nn.Module):
     def __init__(self, sem):
@@ -77,7 +88,8 @@ class TwoStepPredictor(nn.Module):
         prediction = self.predict(noise, intervention)
         return prediction
 
+
 predictors = {
-    'repeated' : Predictor,
-    'two_step' : TwoStepPredictor
+    'repeated': Predictor,
+    'two_step': TwoStepPredictor
 }
