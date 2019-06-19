@@ -14,7 +14,7 @@ class LinearPolicy(nn.Module):
     def __init__(self, dim):
         super(LinearPolicy, self).__init__()
         self.linear = nn.Linear(dim, dim)
-    
+
     def forward(self, *args):
         x = args[0]
         return torch.log_softmax(self.linear(x), dim=-1).squeeze(0)
@@ -27,8 +27,18 @@ class RandomPolicy():
         action_probs = torch.tensor([1. / self.dim for _ in range(self.dim)])
         return torch.log(action_probs)
 
+
+class RootPolicy():
+    def __init__(self, dim):
+        pass
+
+    def __call__(self, *args):
+        return torch.log(torch.tensor([0., 0., 1., 1., 1., 1., 1.]))
+
+
 policies = {
-    'simple' : SimplePolicy,
-    'random' : RandomPolicy,
-    'linear' : LinearPolicy,
+    'simple': SimplePolicy,
+    'random': RandomPolicy,
+    'linear': LinearPolicy,
+    'root': RootPolicy,
 }
