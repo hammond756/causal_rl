@@ -251,8 +251,8 @@ def train(sem, config):
             total_loss_sum = 0
             noise_err_sum = 0
 
+            stats['action_probs'].append(action_prob.detach().numpy())
             if isinstance(policy, nn.Module):
-                stats['action_probs'].append(action_prob)
                 stats['reward'].append(reward_sum / config.log_iters)
                 reward_sum = 0
 
