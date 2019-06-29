@@ -114,7 +114,17 @@ def train(sem, config):
     ])
 
     # initialize policy. This model chooses an the intervention to perform
-    policy = policies.get(config.policy)(sem.dim)
+    policy_args = {
+        'dim': sem.dim
+    }
+
+    if config.policy == 'child':
+        policy_args['child_idxs'] = sem.child_idxs
+
+    if config.policy == 'root':
+        policy_args['root_idxs'] = sem.root_idxs
+
+    policy = policies.get(config.policy)(**policy_args)
     if isinstance(policy, nn.Module):
         policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
         # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)

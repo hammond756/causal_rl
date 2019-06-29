@@ -107,6 +107,14 @@ class StructuralEquationModel(object):
     def roots(self):
         return self.graph._roots
 
+    @property
+    def child_idxs(self):
+        return self.graph._child_indices
+
+    @property
+    def root_idxs(self):
+        return self.graph._root_indices
+
     def counterfactual(self, z_prev=None, intervention=None):
         return self._sample(1, z_prev, intervention, fix_noise=True)
 

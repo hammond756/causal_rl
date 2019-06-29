@@ -3,8 +3,9 @@ import torch.nn as nn
 
 
 class SimplePolicy(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, **kwargs):
         super(SimplePolicy, self).__init__()
+        dim = kwargs.get('dim')
         self.action_weight = nn.Parameter(torch.randn(dim))
 
     def forward(self, *args):
@@ -13,8 +14,9 @@ class SimplePolicy(nn.Module):
 
 
 class LinearPolicy(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, **kwargs):
         super(LinearPolicy, self).__init__()
+        dim = kwargs.get('dim')
         self.linear = nn.Linear(dim, dim)
 
     def forward(self, *args):
@@ -23,16 +25,56 @@ class LinearPolicy(nn.Module):
 
 
 class RandomPolicy():
-    def __init__(self, dim):
-        self.dim = dim
+    def __init__(self, **kwargs):
+        self.dim = kwargs.get('dim')
 
     def __call__(self, *args):
         action_probs = torch.tensor([1. / self.dim for _ in range(self.dim)])
         return torch.log(action_probs)
 
 
+class CyclicPolicy():
+    def __init__(self, **kwargs):
+        self.dim = kwargs.get('dim')
+        self.position = 0
+
+    def __call__(self, *args):
+        action_probs = torch.tensor([1. if i == self.position else 0.
+                                     for i in range(self.dim)])
+
+        return action_probs
+
+
+class ChildPolicy():
+    def __init__(self, **kwargs):
+        self.dim = kwargs.get('dim')
+        self.child_idxs = kwargs.get('child_idxs')
+
+    def __call__(self, *args):
+        n = len(self.child_idxs)
+        action_probs = torch.tensor([1. / n if i in self.child_idxs else 0.
+                                     for i in range(self.dim)])
+
+        return action_probs
+
+
+class RootPolicy():
+    def __init__(self, **kwargs):
+        self.dim = kwargs.get('dim')
+        self.root_idxs = kwargs.get('root_idxs')
+
+    def __call__(self, *args):
+        n = len(self.root_idxs)
+        action_probs = torch.tensor([1. / n if i in self.root_idxs else 0.
+                                     for i in range(self.dim)])
+
+        return action_probs
+
+
 policies = {
     'simple': SimplePolicy,
     'random': RandomPolicy,
     'linear': LinearPolicy,
+    'child': ChildPolicy,
+    'root': RootPolicy
 }
