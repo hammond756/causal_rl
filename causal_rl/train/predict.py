@@ -109,8 +109,8 @@ def train(sem, config):
     # weights model the weights on the causal model.
     predictor = predictors.get(config.predictor)(sem)
     optimizer = torch.optim.SGD([
-        {'params': predictor.predict.parameters(), 'lr': config.lr},
-        {'params': predictor.abduct.parameters(), 'lr': 0.1}
+        {'params': predictor.predict.parameters(), 'lr': config.lr * sem.dim},
+        {'params': predictor.abduct.parameters(), 'lr': 0.1 * sem.dim}
     ])
 
     # initialize policy. This model chooses an the intervention to perform
