@@ -42,7 +42,7 @@ class CyclicPolicy():
         action_probs = torch.tensor([1. if i == self.position else 0.
                                      for i in range(self.dim)])
 
-        return action_probs
+        return torch.log(action_probs)
 
 
 class ChildPolicy():
@@ -55,7 +55,7 @@ class ChildPolicy():
         action_probs = torch.tensor([1. / n if i in self.child_idxs else 0.
                                      for i in range(self.dim)])
 
-        return action_probs
+        return torch.log(action_probs)
 
 
 class RootPolicy():
@@ -68,7 +68,20 @@ class RootPolicy():
         action_probs = torch.tensor([1. / n if i in self.root_idxs else 0.
                                      for i in range(self.dim)])
 
-        return action_probs
+        return torch.log(action_probs)
+
+
+class IntrospectivePolicy(nn.Module):
+    def __init__(self, **kwargs):
+        super(IntrospectivePolicy, self).__init__()
+        self.dim = kwargs.get('dim')
+        self.linear = nn.Linear(self.dim*self.dim, self.dim)
+
+    def forward(self, adjecency_matrix):
+        inp = adjecency_matrix.view(-1)
+        out = self.linear(inp)
+
+        return torch.log_softmax(out, dim=-1)
 
 
 policies = {
@@ -76,5 +89,6 @@ policies = {
     'random': RandomPolicy,
     'linear': LinearPolicy,
     'child': ChildPolicy,
-    'root': RootPolicy
+    'root': RootPolicy,
+    'introspective': IntrospectivePolicy
 }

@@ -162,7 +162,16 @@ def train(sem, config):
         # sample action from policy network
         # action_logprob and action_prob are needed elsewhere
         # to calculate the reward and entropy coefficient
-        action_logprob = policy(observation)
+        inp = {
+            'introspective': predictor.predict.linear1.detach(),
+            'linear': observation,
+            'random': None,
+            'cyclic': None,
+            'child': None,
+            'root': None,
+        }[config.policy]
+
+        action_logprob = policy(inp)
         action_prob = action_logprob.exp()
         action_idx = torch.multinomial(action_prob, 1).long().item()
 
