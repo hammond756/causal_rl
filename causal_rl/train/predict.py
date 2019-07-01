@@ -165,6 +165,7 @@ def train(sem, config):
         inp = {
             'introspective': predictor.predict.linear1.detach(),
             'linear': observation,
+            'simple': None,
             'random': None,
             'cyclic': None,
             'child': None,
