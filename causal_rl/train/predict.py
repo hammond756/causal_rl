@@ -208,7 +208,7 @@ def train(sem, config):
         reg_loss_sum += reg_loss.item()
         total_loss_sum += loss.item()
 
-        noise_err_sum += (predictor.noise - sem.noises).pow(2).mean().item()
+        noise_err_sum += (predictor.noise - sem.noise).pow(2).mean().item()
 
         # compute gradients
         loss.backward()
@@ -255,11 +255,14 @@ def train(sem, config):
             print('obs  ', pretty(observation))
             print('pred ', pretty(prediction))
             print('true ', pretty(target))
-            print('noise', pretty(sem.noises))
+
+            # TODO: make sure this prints the correct noise even when
+            # association, intervention and counterfactual are mixed
+            print('noise', pretty(sem.noise))
             print('pred noise:', pretty(predictor.noise))
             print()
 
-            w_true = sem.graph.weights[1, :, :]
+            w_true = sem.graph.weights
             w_model = predictor.predict.linear1.detach()
             diff = (w_true - w_model)
             stats['causal_err'].append(diff.abs().sum().item())

@@ -41,8 +41,8 @@ class DirectedAcyclicGraph(object):
     @property
     def edges(self):
         edges = torch.zeros_like(self._weights)
-        for i, j, k in self._weights.nonzero():
-            edges[i, j, k] = 1
+        for j, k in self._weights.nonzero():
+            edges[j, k] = 1
 
         return edges.long()
 
@@ -51,29 +51,9 @@ class DirectedAcyclicGraph(object):
         Assure that:
          - adjecency matrix for current time step is lower triangular
         """
-        istril = (self.edges[-1].triu(1) == torch.zeros_like(self.edges[-1])) \
+        istril = (self.edges.triu(1) == torch.zeros_like(self.edges)) \
             .all()
         assert istril, 'Graph is not lower triangular'
-
-
-class StructuralEquation(object):
-    """
-    Represents a structural equation in the structural equation model.
-
-    Args:
-     - weights: a 2D tensor of weights. Shape should be TimeSteps x Dimension
-    """
-    def __init__(self, weights):
-        self.w = torch.tensor(weights, dtype=torch.float)
-
-    def __call__(self, z):
-        # w   = [ [-- incoming weights t-1 -- ]
-        #         [-- incoming weights t   -- ] ]
-        # z   = [ [ z_0', z_0 ],
-        #         [ z_1', z_1 ]
-        #         [ z_2', z_3 ]]
-        # where sum(diag(w.T @ z)) is sum(w_prev.T * z_prev + w.T * z)
-        return self.w.matmul(z).diag().sum()
 
 
 class Noise(object):
@@ -96,12 +76,8 @@ class StructuralEquationModel(object):
         self.dim = graph.dim
         self.depth = graph.depth
 
-        self.funcs = []
-        for i in range(self.dim):
-            self.funcs.append(StructuralEquation(graph.incoming_weights(i)))
-
         self.sample_noise = Noise(noise_dist, noise_param)
-        self.noises = torch.zeros(self.dim)
+        self.noise = torch.zeros(1, self.dim)
 
     @property
     def roots(self):
@@ -130,11 +106,14 @@ class StructuralEquationModel(object):
         z = torch.cat([torch.zeros(self.dim), torch.tensor([1.])]).unsqueeze(0)
 
         if fix_noise:
-            noise = self.noises.unsqueeze(0)
+            noise = self.noise
         else:
-            noise = torch.tensor([self.sample_noise() for _ in range(self.dim)]).unsqueeze(0)
+            noise = torch.stack([self.sample_noise()
+                                 for _ in range(self.dim)], dim=1)
 
-        weights = torch.cat([self.graph.weights[1, :, :], noise.t()], dim=1)
+        self.noise = noise
+
+        weights = torch.cat([self.graph.weights, noise.t()], dim=1)
 
         model = torch.cat([weights, z], dim=0)
 
@@ -171,11 +150,6 @@ class StructuralEquationModel(object):
 
         g_t = torch.ones(dim, dim).tril(-1)
         g_t *= torch.zeros(dim, dim).bernoulli_(1 - p_sparsity)
+        g_t = g_t.long()
 
-        # random SEM won't have recurrent connection for now
-        # TODO: make this an option
-        g_prev = torch.zeros_like(g_t)
-
-        g = torch.stack([g_prev, g_t]).long()
-
-        return self.random_with_edges(g, noise_dist, noise_param)
+        return self.random_with_edges(g_t, noise_dist, noise_param)
