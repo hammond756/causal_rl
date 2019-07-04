@@ -119,39 +119,34 @@ class StructuralEquationModel(object):
         return self._sample(1, z_prev, intervention, fix_noise=True)
 
     def _sample(self, n, z_prev=None, intervention=None, fix_noise=False):
-        z = torch.zeros(n+1, self.dim)
 
-        # initial state
-        z[0] = z_prev if z_prev is not None else torch.randn(self.dim)
-
-        # intervention
         if intervention is not None:
             inter_target, inter_value = intervention
+            do_x = torch.tensor([0. for _ in range(self.dim)] + [inter_value])
+            do_x = do_x.unsqueeze(dim=0)
         else:
             inter_target = None
 
-        for t in range(1, n+1):
-            for j in range(self.dim):
-                if j == inter_target:
-                    # variabje j is only determined by action
-                    z[t, j] = inter_value
-                else:
-                    # prepare inputs, see StructuralEquation for details
-                    z_ = torch.stack([z[t-1], z[t]], dim=1)
-                    z[t, j] = self.funcs[j](z_)
+        z = torch.cat([torch.zeros(self.dim), torch.tensor([1.])]).unsqueeze(0)
 
-                    # add noise, either from infered values (counterfactual)
-                    # or sample new
-                    # NB: needs to be done in inner loop (sampling order).
-                    if fix_noise:
-                        z[t, j] += self.noises[j]
-                    else:
-                        noise = self.sample_noise()
-                        z[t, j] += noise.item()
-                        self.noises[j] = noise
+        if fix_noise:
+            noise = self.noises.unsqueeze(0)
+        else:
+            noise = torch.tensor([self.sample_noise() for _ in range(self.dim)]).unsqueeze(0)
 
-        # return states (excluding previous state)
-        return z[1:]
+        weights = torch.cat([self.graph.weights[1, :, :], noise.t()], dim=1)
+
+        model = torch.cat([weights, z], dim=0)
+
+        if inter_target is not None:
+            model[inter_target, :] = do_x
+
+        result = z.clone().t()
+
+        for i in range(self.dim - 1):
+            result = model.matmul(result)
+
+        return result.t()[:, :-1]
 
     def __call__(self, n, z_prev=None, intervention=None):
         return self._sample(n, z_prev, intervention, fix_noise=False)
