@@ -19,6 +19,7 @@ import torch
 import torch.nn as nn
 import argparse
 import os
+import time
 
 from causal_rl.models import predictors, policies
 
@@ -141,13 +142,16 @@ def train(sem, config):
         'iterations': [],
         'reward': [],
         'causal_err': [],
-        'noise_err': []
+        'noise_err': [],
+        'cpu_time': []
     }
 
     pred_loss_sum = 0
     reg_loss_sum = 0
     total_loss_sum = 0
     noise_err_sum = 0
+    cpu_time_sum = 0
+    start_timer = time.time()
 
     if isinstance(policy, nn.Module):
         action_loss_sum = 0
@@ -264,12 +268,18 @@ def train(sem, config):
             stats['loss']['reg'].append(reg_loss_sum / config.log_iters)
             stats['loss']['total'].append(total_loss_sum / config.log_iters)
             stats['noise_err'].append(noise_err_sum / config.log_iters)
+            stats['cpu_time'].append(cpu_time_sum)
             stats['iterations'].append(iteration)
 
             pred_loss_sum = 0
             reg_loss_sum = 0
             total_loss_sum = 0
             noise_err_sum = 0
+
+            # update cumulative time
+            now = time.time()
+            cpu_time_sum += now - start_timer
+            start_timer = now
 
             stats['action_probs'].append(action_prob.detach().numpy())
             if isinstance(policy, nn.Module):
