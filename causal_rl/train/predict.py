@@ -97,6 +97,8 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--reg_lambda', type=float, default=1.)
         self.add_argument('--noise_dist', nargs=2, action=parse_noise_arg,
                           default=['gaussian', 1.0])
+        self.add_argument('--ordered', type=str2bool, default=False)
+        self.add_argument('--method', type=str, default='matrix')
 
 
 def train(sem, config):
@@ -108,7 +110,9 @@ def train(sem, config):
     # init predictor. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = x. The learned
     # weights model the weights on the causal model.
-    predictor = predictors.get(config.predictor)(sem)
+    predictor = predictors.get(config.predictor)(sem,
+                                                 ordered=config.ordered,
+                                                 method=config.method)
     optimizer = torch.optim.SGD([
         {'params': predictor.predict.parameters(), 'lr': config.lr * sem.dim},
         {'params': predictor.abduct.parameters(), 'lr': 0.1 * sem.dim}
@@ -214,7 +218,8 @@ def train(sem, config):
         loss.backward()
 
         # heuristic. we know that the true matrix is lower triangular.
-        predictor.predict.linear1.grad.tril_(-1)
+        if config.ordered:
+            predictor.predict.linear1.grad.tril_(-1)
 
         optimizer.step()
 

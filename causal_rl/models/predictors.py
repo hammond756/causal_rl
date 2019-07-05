@@ -3,42 +3,65 @@ import torch.nn as nn
 
 
 class Predictor(nn.Module):
-    def __init__(self, dim):
+    def __init__(self, dim, ordered):
         super(Predictor, self).__init__()
         self.dim = dim
 
         # heuristic: we know the true weights are lower triangular
         # heuristic: root nodes should have self-connection of 1
         # to carry noise to prediction
-        self.linear1 = nn.Parameter(
-            torch.randn((self.dim, self.dim)).tril_(-1)
-        )
 
-    def forward(self, noise, intervention):
+        weights = torch.randn((self.dim, self.dim))
+        if ordered:
+            weights.tril_(-1)
+
+        self.linear1 = nn.Parameter(weights)
+
+    def _iterative(self, noise, intervention):
+        target, value = intervention
+
+        output = torch.zeros_like(noise)
+
+        for i in range(self.dim):
+            if i == target:
+                output[:, i] = value
+                continue
+
+            output[:, i] = self.linear1[i].matmul(output.clone().t()) \
+                + noise[:, i]
+
+        return output
+
+    def _matrix(self, noise, intervention):
         target, value = intervention
 
         # create dummy vector for 'hetrogeneous coordinates'
-        z = torch.cat([torch.zeros(self.dim), torch.tensor([1.])]).unsqueeze(0)
+        z = torch.cat([torch.zeros(self.dim), torch.tensor([1.])])
         z.requires_grad = False
 
         # formulate intervention as a vector to be applied to the model matrix
         do_x = torch.tensor([0. for _ in range(self.dim)] + [value])
-        do_x = do_x.unsqueeze(dim=0)
         do_x.requires_grad = False
 
+        # combine matrices
         weights = torch.cat([self.linear1, noise.t()], dim=1)
-
-        model = torch.cat([weights, z], dim=0)
+        model = torch.cat([weights, z.unsqueeze(0)], dim=0)
 
         # perform intervention on the model
         model[target, :] = do_x
 
-        result = z.clone().t()
-
+        # compute result
+        result = z.clone()
         for i in range(self.dim - 1):
             result = model.matmul(result)
 
-        return result.t()[:, :-1]
+        return result[:-1]
+
+    def forward(self, noise, intervention, method):
+        return {
+            'matrix': self._matrix(noise, intervention),
+            'iterative': self._iterative(noise, intervention)
+        }[method]
 
 
 class Abductor(torch.nn.Module):
@@ -53,19 +76,20 @@ class Abductor(torch.nn.Module):
 
 
 class TwoStepPredictor(nn.Module):
-    def __init__(self, sem):
+    def __init__(self, sem, ordered, method):
         super(TwoStepPredictor, self).__init__()
 
         self.dim = sem.dim
+        self.method = method
         self.noise = None
 
         self.abduct = Abductor(self.dim)
-        self.predict = Predictor(self.dim)
+        self.predict = Predictor(self.dim, ordered)
 
     def forward(self, observation, intervention):
         noise = self.abduct(observation)
         self.noise = noise
-        prediction = self.predict(noise, intervention)
+        prediction = self.predict(noise, intervention, self.method)
         return prediction
 
 
