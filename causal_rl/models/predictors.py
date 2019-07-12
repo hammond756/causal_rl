@@ -32,7 +32,7 @@ class Predictor(nn.Module):
 
         return output
 
-    def _matrix(self, noise, intervention):
+    def _make_model(self, noise, intervention):
         target, value = intervention
 
         # create dummy vector for 'hetrogeneous coordinates'
@@ -48,18 +48,32 @@ class Predictor(nn.Module):
         model = torch.cat([weights, z.unsqueeze(0)], dim=0)
 
         # perform intervention on the model
+        # TODO: verify that this can be seen as a form of dropout
         model[target, :] = do_x
 
-        # compute result
-        result = z.clone()
-        for i in range(self.dim - 1):
-            result = model.matmul(result)
+        return model
 
-        return result[:-1]
+    def _matrix(self, noise, intervention):
+
+        model = self._make_model(noise, intervention)
+
+        # compute result
+        z = torch.eye(self.dim + 1)[-1]  # [0, 0, 0, ..., 1]
+        for i in range(self.dim - 1):
+            z = model.matmul(z)
+
+        return z[:-1]
+
+    def _power(self, noise, intervention):
+        model = self._make_model(noise, intervention)
+        z = torch.eye(self.dim + 1)[-1]  # [0, 0, 0, ..., 1]
+        z = model.matrix_power(self.dim - 1).matmul(z)
+        return z[:-1]
 
     def forward(self, noise, intervention, method):
         return {
             'matrix': self._matrix(noise, intervention),
+            'power': self._power(noise, intervention),
             'iterative': self._iterative(noise, intervention)
         }[method]
 
