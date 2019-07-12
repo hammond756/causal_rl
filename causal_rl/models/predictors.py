@@ -70,11 +70,33 @@ class Predictor(nn.Module):
         z = model.matrix_power(self.dim - 1).matmul(z)
         return z[:-1]
 
+    def _power_sum(self, noise, intervention):
+        target, value = intervention
+
+        model = self._make_model(noise, intervention)
+        u = model[:self.dim, -1]
+        model = model[:self.dim, :self.dim]
+
+        # model = self.linear1.clone()
+        # u = noise.clone()
+
+        # model[target, :] = torch.zeros(self.dim)
+        # u[:, target] = value
+
+        products = torch.stack(
+            [model.matrix_power(d).matmul(u.t()) for d in range(0, self.dim - 1)]
+        )
+
+        products = products.sum(dim=0)
+
+        return products
+
     def forward(self, noise, intervention, method):
         return {
             'matrix': self._matrix(noise, intervention),
             'power': self._power(noise, intervention),
-            'iterative': self._iterative(noise, intervention)
+            'iterative': self._iterative(noise, intervention),
+            'power_sum': self._power_sum(noise, intervention)
         }[method]
 
 
@@ -90,10 +112,10 @@ class Abductor(torch.nn.Module):
 
 
 class TwoStepPredictor(nn.Module):
-    def __init__(self, sem, ordered, method):
+    def __init__(self, dim, ordered, method):
         super(TwoStepPredictor, self).__init__()
 
-        self.dim = sem.dim
+        self.dim = dim
         self.method = method
         self.noise = None
 
@@ -102,7 +124,7 @@ class TwoStepPredictor(nn.Module):
 
     def forward(self, observation, intervention):
         noise = self.abduct(observation)
-        self.noise = noise
+        self.noise = noise.clone()
         prediction = self.predict(noise, intervention, self.method)
         return prediction
 

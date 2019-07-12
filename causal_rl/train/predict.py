@@ -110,7 +110,7 @@ def train(sem, config):
     # init predictor. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = x. The learned
     # weights model the weights on the causal model.
-    predictor = predictors.get(config.predictor)(sem,
+    predictor = predictors.get(config.predictor)(sem.dim,
                                                  ordered=config.ordered,
                                                  method=config.method)
     optimizer = torch.optim.SGD([
