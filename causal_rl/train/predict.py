@@ -95,6 +95,7 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--intervention_value', type=int, default=0)
         self.add_argument('--lr', type=float, default=0.0001)
         self.add_argument('--reg_lambda', type=float, default=1.)
+        self.add_argument('--regularizer', type=str, default='norm')
         self.add_argument('--noise_dist', nargs=2, action=parse_noise_arg,
                           default=['gaussian', 1.0])
         self.add_argument('--ordered', type=str2bool, default=False)
@@ -202,9 +203,17 @@ def train(sem, config):
         # to truth.
         optimizer.zero_grad()
 
-        # compute loss
+        # compute prediction loss
         pred_loss = (prediction - target).pow(2).mean()
-        reg_loss = torch.norm(predictor.predict.linear1, 1)
+
+        # compute regularization loss
+        B = predictor.predict.linear1
+        reg_loss = {
+            'norm_1': B.norm(p=1),
+            'power_fro': B.matrix_power(predictor.dim).norm(p='fro'),
+            'power_1': B.matrix_power(predictor.dim).norm(p=1)
+        }[config.regularizer]
+
         loss = pred_loss + config.reg_lambda * reg_loss
 
         # accumulate losses
