@@ -61,7 +61,7 @@ class Predictor(nn.Module):
 
         # compute result
         z = torch.eye(self.dim + 1)[-1]  # [0, 0, 0, ..., 1]
-        for i in range(self.dim - 1):
+        for i in range(self.dim):
             z = model.matmul(z)
 
         return z[:-1]
@@ -69,7 +69,7 @@ class Predictor(nn.Module):
     def _power(self, noise, intervention):
         model = self._make_model(noise, intervention)
         z = torch.eye(self.dim + 1)[-1]  # [0, 0, 0, ..., 1]
-        z = model.matrix_power(self.dim - 1).matmul(z)
+        z = model.matrix_power(self.dim).matmul(z)
         return z[:-1]
 
     def _power_sum(self, noise, intervention):
@@ -82,7 +82,7 @@ class Predictor(nn.Module):
         u[target] = value
 
         products = torch.stack(
-            [model.matrix_power(d).matmul(u) for d in range(0, self.dim - 1)]
+            [model.matrix_power(d).matmul(u) for d in range(0, self.dim)]
         )
 
         products = products.sum(dim=0)
