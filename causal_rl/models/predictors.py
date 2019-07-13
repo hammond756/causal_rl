@@ -30,6 +30,8 @@ class Predictor(nn.Module):
             output[:, i] = self.linear1[i].matmul(output.clone().t()) \
                 + noise[:, i]
 
+        # TODO: this might need to be squeezed to match output of
+        # the other methods
         return output
 
     def _make_model(self, noise, intervention):
@@ -73,18 +75,14 @@ class Predictor(nn.Module):
     def _power_sum(self, noise, intervention):
         target, value = intervention
 
-        model = self._make_model(noise, intervention)
-        u = model[:self.dim, -1]
-        model = model[:self.dim, :self.dim]
+        model = self.linear1.clone()
+        u = noise.clone().squeeze()
 
-        # model = self.linear1.clone()
-        # u = noise.clone()
-
-        # model[target, :] = torch.zeros(self.dim)
-        # u[:, target] = value
+        model[target, :] = torch.zeros(self.dim)
+        u[target] = value
 
         products = torch.stack(
-            [model.matrix_power(d).matmul(u.t()) for d in range(0, self.dim - 1)]
+            [model.matrix_power(d).matmul(u) for d in range(0, self.dim - 1)]
         )
 
         products = products.sum(dim=0)
