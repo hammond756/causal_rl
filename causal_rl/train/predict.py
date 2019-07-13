@@ -163,7 +163,7 @@ def train(sem, config):
 
     for iteration in range(n_iterations):
 
-        should_log = (iteration+1) % config.log_iters == 0
+        should_log = (iteration + 1) % config.log_iters == 0 or iteration == 0
 
         observation = sem(n=1, z_prev=torch.zeros(sem.dim), intervention=None)
 
