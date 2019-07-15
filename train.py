@@ -1,4 +1,5 @@
 import torch
+import pandas as pd
 import pickle
 import uuid
 import os
@@ -59,7 +60,7 @@ if __name__ == '__main__':
         args = config.random_dag + config.noise_dist
         sem = StructuralEquationModel.random(*args)
 
-    stats = train(sem, config)
+    records = train(sem, config)
 
     # # # # #
     # save all the things
@@ -69,4 +70,4 @@ if __name__ == '__main__':
 
     # statistics
     with open(config.output_dir + '/stats.pkl', 'wb') as f:
-        pickle.dump(stats, f)
+        pickle.dump(pd.DataFrame(records), f)

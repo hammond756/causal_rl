@@ -136,20 +136,8 @@ def train(sem, config):
         # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
         # policy_baseline = 0
 
-    # containers for statistics
-    stats = {
-        'loss': {
-            'pred': [],
-            'reg': [],
-            'total': []
-        },
-        'action_probs': [],
-        'iterations': [],
-        'reward': [],
-        'causal_err': [],
-        'noise_err': [],
-        'cpu_time': []
-    }
+    # list to store logs
+    records = []
 
     pred_loss_sum = 0
     reg_loss_sum = 0
@@ -279,14 +267,24 @@ def train(sem, config):
             w_true = sem.graph.weights
             w_model = predictor.predict.linear1.detach()
             diff = (w_true - w_model)
-            stats['causal_err'].append(diff.abs().sum().item())
 
-            stats['loss']['pred'].append(pred_loss_sum / config.log_iters)
-            stats['loss']['reg'].append(reg_loss_sum / config.log_iters)
-            stats['loss']['total'].append(total_loss_sum / config.log_iters)
-            stats['noise_err'].append(noise_err_sum / config.log_iters)
-            stats['cpu_time'].append(cpu_time_sum)
-            stats['iterations'].append(iteration)
+            row = {
+                'dim': sem.dim,
+                'iterations': iteration,
+                'causal_err': diff.abs().sum().item(),
+                'pred_loss': pred_loss_sum / config.log_iters,
+                'reg_loss': reg_loss_sum / config.log_iters,
+                'total_loss': total_loss_sum / config.log_iters,
+                'noise_err': noise_err_sum / config.log_iters,
+                'cpu_time': cpu_time_sum,
+                'action_probs': action_prob.detach().numpy(),
+                'w_true': w_true.detach().numpy(),
+                'w_model': w_model.detach().numpy(),
+            }
+
+            # add entire configuration object to the row
+            row = {**row, **config.__dict__}
+            records.append(row)
 
             pred_loss_sum = 0
             reg_loss_sum = 0
@@ -298,13 +296,8 @@ def train(sem, config):
             cpu_time_sum += now - start_timer
             start_timer = now
 
-            stats['action_probs'].append(action_prob.detach().numpy())
             if isinstance(policy, nn.Module):
-                stats['reward'].append(reward_sum / config.log_iters)
+                row['reward'] = reward_sum / config.log_iters
                 reward_sum = 0
 
-    stats['true_weights'] = w_true
-    stats['model_weights'] = w_model
-    stats['config'] = config
-
-    return stats
+    return records
