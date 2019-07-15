@@ -95,7 +95,7 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--intervention_value', type=int, default=0)
         self.add_argument('--lr', type=float, default=0.0001)
         self.add_argument('--reg_lambda', type=float, default=1.)
-        self.add_argument('--regularizer', type=str, default='norm')
+        self.add_argument('--regularizer', type=str, default='norm_1')
         self.add_argument('--noise_dist', nargs=2, action=parse_noise_arg,
                           default=['gaussian', 1.0])
         self.add_argument('--ordered', type=str2bool, default=False)
