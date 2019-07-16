@@ -21,7 +21,7 @@ import argparse
 import os
 import time
 
-from causal_rl.models import predictors, policies
+from causal_rl.models import APC, policies
 
 
 def pretty(vector):
@@ -85,19 +85,18 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--random_weights', type=str2bool, required=False,
                           default=True)
         self.add_argument('--random_dag', type=float, nargs=2, required=False)
-        self.add_argument('--predictor', type=str, required=True)
         self.add_argument('--n_iters', type=int, default=50000)
         self.add_argument('--log_iters', type=int, default=1000)
         self.add_argument('--policy', type=str, default='random')
-        self.add_argument('--entr_loss_coeff', type=float, default=0)
         self.add_argument('--output_dir', type=str, action=readable_dir)
         self.add_argument('--seed', type=int, default=None)
         self.add_argument('--intervention_value', type=int, default=0)
-        self.add_argument('--lr', type=float, default=0.0001)
-        self.add_argument('--reg_lambda', type=float, default=1.)
-        self.add_argument('--regularizer', type=str, default='norm_1')
+        self.add_argument('--lr_p', type=float, default=0.0001)
+        self.add_argument('--lr_a', type=float, default=0.1)
+        self.add_argument('--lambda_1', type=float, default=1.0)
+        self.add_argument('--lambda_2', type=float, default=1.0)
         self.add_argument('--noise_dist', nargs=2, action=parse_noise_arg,
-                          default=['gaussian', 1.0])
+                          default=['bernoulli', 0.5])
         self.add_argument('--ordered', type=str2bool, default=False)
         self.add_argument('--method', type=str, default='matrix')
 
@@ -105,21 +104,25 @@ class PredictArgumentParser(argparse.ArgumentParser):
 def train(sem, config):
 
     n_iterations = config.n_iters
-    entr_loss_coeff = config.entr_loss_coeff
     variables = torch.arange(sem.dim)
 
-    # init predictor. This model takes in sampled values of X and
+    # init APC model. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = x. The learned
     # weights model the weights on the causal model.
-    predictor = predictors.get(config.predictor)(sem.dim,
-                                                 ordered=config.ordered,
-                                                 method=config.method)
+    model = APC(sem.dim, ordered=config.ordered, method=config.method)
+
     optimizer = torch.optim.SGD([
-        {'params': predictor.predict.parameters(), 'lr': config.lr * sem.dim},
-        {'params': predictor.abduct.parameters(), 'lr': 0.1 * sem.dim}
+        {
+            'params': model.predict.parameters(),
+            'lr': config.lr_p * sem.dim
+        },
+        {
+            'params': model.abduct.parameters(),
+            'lr': config.lr_a * sem.dim
+        }
     ])
 
-    # initialize policy. This model chooses an the intervention to perform
+    # gather relevant arguments for policy
     policy_args = {
         'dim': sem.dim
     }
@@ -130,6 +133,7 @@ def train(sem, config):
     if config.policy == 'root':
         policy_args['root_idxs'] = sem.root_idxs
 
+    # initialize policy. This model chooses an the intervention to perform
     policy = policies.get(config.policy)(**policy_args)
     if isinstance(policy, nn.Module):
         policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
@@ -140,7 +144,8 @@ def train(sem, config):
     records = []
 
     pred_loss_sum = 0
-    reg_loss_sum = 0
+    lasso_loss_sum = 0
+    cycle_loss_sum = 0
     total_loss_sum = 0
     noise_err_sum = 0
     cpu_time_sum = 0
@@ -160,7 +165,7 @@ def train(sem, config):
         # action_logprob and action_prob are needed elsewhere
         # to calculate the reward and entropy coefficient
         inp = {
-            'introspective': predictor.predict.linear1.detach(),
+            'introspective': model.predict.linear1.detach(),
             'linear': observation,
             'simple': None,
             'random': None,
@@ -185,38 +190,38 @@ def train(sem, config):
         # # # #
         # Optimze causal model
         # # # #
-        prediction = predictor(observation, intervention)
+        prediction = model(observation, intervention)
 
-        # Backprop on predictor. Adjust weights s.t. predictions get closer
+        # Backprop on model. Adjust weights s.t. predictions get closer
         # to truth.
         optimizer.zero_grad()
 
-        # compute prediction loss
+        # compute loss components
         pred_loss = (prediction - target).pow(2).mean()
 
-        # compute regularization loss
-        B = predictor.predict.linear1
-        reg_loss = {
-            'norm_1': B.norm(p=1),
-            'power_fro': B.matrix_power(predictor.dim).norm(p='fro'),
-            'power_1': B.matrix_power(predictor.dim).norm(p=1)
-        }[config.regularizer]
+        B = model.predict.linear1
+        lasso_loss = B.norm(p=1)
+        cycle_loss = B.matrix_power(model.dim).norm(p=1)
 
-        loss = pred_loss + config.reg_lambda * reg_loss
+        # compute regularization loss
+        loss = pred_loss \
+            + config.lambda_1 * lasso_loss \
+            + config.lambda_2 * cycle_loss
 
         # accumulate losses
         pred_loss_sum += pred_loss.item()
-        reg_loss_sum += reg_loss.item()
+        lasso_loss_sum += lasso_loss.item()
+        cycle_loss_sum += cycle_loss.item()
         total_loss_sum += loss.item()
 
-        noise_err_sum += (predictor.noise - sem.noise).pow(2).mean().item()
+        noise_err_sum += (model.noise - sem.noise).pow(2).mean().item()
 
         # compute gradients
         loss.backward()
 
         # heuristic. we know that the true matrix is lower triangular.
         if config.ordered:
-            predictor.predict.linear1.grad.tril_(-1)
+            model.predict.linear1.grad.tril_(-1)
 
         optimizer.step()
 
@@ -237,11 +242,6 @@ def train(sem, config):
             action_loss = -reward * log_prob
             action_loss_sum += action_loss.item()
 
-            # action_loss = -(reward-policy_baseline) * log_prob
-            # policy_baseline = policy_baseline * 0.997 + reward * 0.003
-            if entr_loss_coeff > 0:
-                entr = -(action_logprob * action_prob).sum()
-                action_loss -= entr_loss_coeff * entr
             action_loss.backward()
             policy_optim.step()
 
@@ -252,20 +252,23 @@ def train(sem, config):
             print('{} / {} \t\t loss: {}'.format(iteration+1,
                                                  n_iterations,
                                                  avg_loss))
-            print('prediction loss:     ', pred_loss_sum / config.log_iters)
-            print('regularization loss: ', reg_loss_sum / config.log_iters)
+            print('prediction loss:', pred_loss_sum / config.log_iters)
+            print('lasso loss:     ', lasso_loss_sum / config.log_iters)
+            print('cycle loss:     ', cycle_loss_sum / config.log_iters)
             print('obs  ', pretty(observation))
-            print('pred ', pretty(prediction))
+            print()
             print('true ', pretty(target))
+            print('pred ', pretty(prediction))
 
             # TODO: make sure this prints the correct noise even when
             # association, intervention and counterfactual are mixed
-            print('noise', pretty(sem.noise))
-            print('pred noise:', pretty(predictor.noise))
+            print()
+            print('noise:', pretty(sem.noise))
+            print('pred :', pretty(model.noise))
             print()
 
             w_true = sem.graph.weights
-            w_model = predictor.predict.linear1.detach()
+            w_model = model.predict.linear1.detach()
             diff = (w_true - w_model)
 
             row = {
@@ -273,7 +276,8 @@ def train(sem, config):
                 'iterations': iteration,
                 'causal_err': diff.abs().sum().item(),
                 'pred_loss': pred_loss_sum / config.log_iters,
-                'reg_loss': reg_loss_sum / config.log_iters,
+                'lasso_loss': lasso_loss_sum / config.log_iters,
+                'cycle_loss': cycle_loss_sum / config.log_iters,
                 'total_loss': total_loss_sum / config.log_iters,
                 'noise_err': noise_err_sum / config.log_iters,
                 'cpu_time': cpu_time_sum,
@@ -287,7 +291,8 @@ def train(sem, config):
             records.append(row)
 
             pred_loss_sum = 0
-            reg_loss_sum = 0
+            lasso_loss_sum = 0
+            cycle_loss_sum = 0
             total_loss_sum = 0
             noise_err_sum = 0
 

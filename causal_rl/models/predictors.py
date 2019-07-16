@@ -109,9 +109,9 @@ class Abductor(torch.nn.Module):
         return torch.sigmoid(out)  # if self.training else (out > 0.7).float()
 
 
-class TwoStepPredictor(nn.Module):
+class APC(nn.Module):
     def __init__(self, dim, ordered, method):
-        super(TwoStepPredictor, self).__init__()
+        super(APC, self).__init__()
 
         self.dim = dim
         self.method = method
@@ -125,8 +125,3 @@ class TwoStepPredictor(nn.Module):
         self.noise = noise.clone()
         prediction = self.predict(noise, intervention, self.method)
         return prediction
-
-
-predictors = {
-    'two_step': TwoStepPredictor
-}
