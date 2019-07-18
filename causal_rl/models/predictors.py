@@ -109,9 +109,9 @@ class Abductor(torch.nn.Module):
         return torch.sigmoid(out)  # if self.training else (out > 0.7).float()
 
 
-class APC(nn.Module):
+class TwoStepPredictor(nn.Module):
     def __init__(self, dim, ordered, method):
-        super(APC, self).__init__()
+        super(TwoStepPredictor, self).__init__()
 
         self.dim = dim
         self.method = method
@@ -120,8 +120,61 @@ class APC(nn.Module):
         self.abduct = Abductor(self.dim)
         self.predict = Predictor(self.dim, ordered)
 
+    @property
+    def B(self):
+        return self.predict.linear1
+
     def forward(self, observation, intervention):
         noise = self.abduct(observation)
         self.noise = noise.clone()
         prediction = self.predict(noise, intervention, self.method)
         return prediction
+
+
+class InversePredictor(nn.Module):
+    def __init__(self, dim, ordered, method):
+        super(InversePredictor, self).__init__()
+
+        self.dim = dim
+
+        weights = torch.randn((self.dim, self.dim))
+        if ordered:
+            weights.tril_(-1)
+
+        self.B = nn.Parameter(weights)
+        self.noise = None
+
+    def _weights(self, intervention=None):
+
+        if intervention is None:
+            B = self.B
+        else:
+            target, _ = intervention
+            B = self.B.clone()
+            B[target, :] = torch.zeros(self.dim)
+
+        return torch.stack(
+            [B.matrix_power(d) for d in range(self.dim)]
+        ).sum(dim=0)
+
+    def _abduct(self, observation):
+        return self._weights().inverse().matmul(observation.squeeze())
+
+    def _predict(self, noise, intervention):
+        target, value = intervention
+
+        u = noise.clone().squeeze()
+        u[target] = value
+
+        return self._weights().matmul(u)
+
+    def forward(self, observation, intervention):
+        noise = self._abduct(observation)
+        self.noise = noise.clone()
+        return self._predict(noise, intervention)
+
+
+predictors = {
+    'two_step': TwoStepPredictor,
+    'inverse': InversePredictor
+}

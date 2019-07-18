@@ -21,7 +21,7 @@ import argparse
 import os
 import time
 
-from causal_rl.models import APC, policies
+from causal_rl.models import predictors, policies
 
 
 def pretty(vector):
@@ -99,6 +99,7 @@ class PredictArgumentParser(argparse.ArgumentParser):
                           default=['bernoulli', 0.5])
         self.add_argument('--ordered', type=str2bool, default=False)
         self.add_argument('--method', type=str, default='matrix')
+        self.add_argument('--predictor', type=str, default='two_step')
 
 
 def train(sem, config):
@@ -109,18 +110,16 @@ def train(sem, config):
     # init APC model. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = x. The learned
     # weights model the weights on the causal model.
-    model = APC(sem.dim, ordered=config.ordered, method=config.method)
-
-    optimizer = torch.optim.SGD([
-        {
-            'params': model.predict.parameters(),
-            'lr': config.lr_p * sem.dim
-        },
-        {
-            'params': model.abduct.parameters(),
-            'lr': config.lr_a * sem.dim
-        }
-    ])
+    model = predictors.get(config.predictor)(sem.dim,
+                                             ordered=config.ordered,
+                                             method=config.method)
+    if config.predictor == 'two_step':
+        optimizer = torch.optim.SGD([
+            {'params': model.predict.parameters(), 'lr': config.lr_p * sem.dim},
+            {'params': model.abduct.parameters(), 'lr': config.lr_a * sem.dim}
+        ])
+    else:
+        optimizer = torch.optim.SGD(model.parameters(), lr=config.lr_p * sem.dim)
 
     # gather relevant arguments for policy
     policy_args = {
@@ -165,7 +164,7 @@ def train(sem, config):
         # action_logprob and action_prob are needed elsewhere
         # to calculate the reward and entropy coefficient
         inp = {
-            'introspective': model.predict.linear1.detach(),
+            'introspective': model.B.detach(),
             'linear': observation,
             'simple': None,
             'random': None,
@@ -199,9 +198,8 @@ def train(sem, config):
         # compute loss components
         pred_loss = (prediction - target).pow(2).mean()
 
-        B = model.predict.linear1
-        lasso_loss = B.norm(p=1)
-        cycle_loss = B.matrix_power(model.dim).norm(p=1)
+        lasso_loss = model.B.norm(p=1)
+        cycle_loss = model.B.matrix_power(model.dim).norm(p=1)
 
         # compute regularization loss
         loss = pred_loss \
@@ -221,7 +219,7 @@ def train(sem, config):
 
         # heuristic. we know that the true matrix is lower triangular.
         if config.ordered:
-            model.predict.linear1.grad.tril_(-1)
+            model.B.grad.tril_(-1)
 
         optimizer.step()
 
@@ -268,7 +266,7 @@ def train(sem, config):
             print()
 
             w_true = sem.graph.weights
-            w_model = model.predict.linear1.detach()
+            w_model = model.B.detach()
             diff = (w_true - w_model)
 
             row = {
