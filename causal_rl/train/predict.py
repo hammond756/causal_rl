@@ -114,10 +114,13 @@ def train(sem, config):
     predictor = predictors.get(config.predictor)(sem.dim,
                                                  ordered=config.ordered,
                                                  method=config.method)
-    optimizer = torch.optim.SGD([
-        {'params': predictor.predict.parameters(), 'lr': config.lr * sem.dim},
-        {'params': predictor.abduct.parameters(), 'lr': 0.1 * sem.dim}
-    ])
+    if config.predictor == 'two_step':
+        optimizer = torch.optim.SGD([
+            {'params': predictor.predict.parameters(), 'lr': config.lr * sem.dim},
+            {'params': predictor.abduct.parameters(), 'lr': 0.1 * sem.dim}
+        ])
+    else:
+        optimizer = torch.optim.SGD(predictor.parameters(), lr=config.lr * sem.dim)
 
     # initialize policy. This model chooses an the intervention to perform
     policy_args = {
@@ -160,7 +163,7 @@ def train(sem, config):
         # action_logprob and action_prob are needed elsewhere
         # to calculate the reward and entropy coefficient
         inp = {
-            'introspective': predictor.predict.linear1.detach(),
+            'introspective': predictor.B.detach(),
             'linear': observation,
             'simple': None,
             'random': None,
@@ -195,7 +198,7 @@ def train(sem, config):
         pred_loss = (prediction - target).pow(2).mean()
 
         # compute regularization loss
-        B = predictor.predict.linear1
+        B = predictor.B
         reg_loss = {
             'norm_1': B.norm(p=1),
             'power_fro': B.matrix_power(predictor.dim).norm(p='fro'),
@@ -216,7 +219,7 @@ def train(sem, config):
 
         # heuristic. we know that the true matrix is lower triangular.
         if config.ordered:
-            predictor.predict.linear1.grad.tril_(-1)
+            predictor.B.grad.tril_(-1)
 
         optimizer.step()
 
@@ -265,7 +268,7 @@ def train(sem, config):
             print()
 
             w_true = sem.graph.weights
-            w_model = predictor.predict.linear1.detach()
+            w_model = predictor.B.detach()
             diff = (w_true - w_model)
 
             row = {
