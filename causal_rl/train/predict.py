@@ -20,8 +20,29 @@ import torch.nn as nn
 import argparse
 import os
 import time
+from itertools import chain, combinations
 
 from causal_rl.models import predictors, policies
+
+
+def interventions(variables):
+    '''
+    Generates a byte tensor with all possible combinations of variables
+    to intervene on, including the empty set.
+    '''
+    def powerset(iterable):
+        "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
+        s = list(iterable)
+        return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
+
+    result = []
+    for subset in powerset(variables):
+        mask = torch.tensor(
+            [1. if i in subset else 0. for i in range(len(variables))]
+        )
+        result.append(mask)
+
+    return torch.stack(result).byte()
 
 
 def pretty(vector):
@@ -106,7 +127,9 @@ class PredictArgumentParser(argparse.ArgumentParser):
 def train(sem, config):
 
     n_iterations = config.n_iters
+
     variables = torch.arange(sem.dim)
+    allowed_actions = interventions(variables)
 
     # init APC model. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = x. The learned
@@ -124,7 +147,7 @@ def train(sem, config):
 
     # gather relevant arguments for policy
     policy_args = {
-        'dim': sem.dim
+        'dim': len(allowed_actions)
     }
 
     if config.policy == 'child':
@@ -179,7 +202,7 @@ def train(sem, config):
         action_idx = torch.multinomial(action_prob, 1).long().item()
 
         # covert action to intervention
-        action = variables[action_idx]
+        action = allowed_actions[action_idx]
         inter_value = config.intervention_value
         intervention = (action, inter_value)
 

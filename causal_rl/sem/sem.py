@@ -96,13 +96,6 @@ class StructuralEquationModel(object):
 
     def _sample(self, n, z_prev=None, intervention=None, fix_noise=False):
 
-        if intervention is not None:
-            inter_target, inter_value = intervention
-            do_x = torch.tensor([0. for _ in range(self.dim)] + [inter_value])
-            do_x = do_x.unsqueeze(dim=0)
-        else:
-            inter_target = None
-
         z = torch.cat([torch.zeros(self.dim), torch.tensor([1.])]).unsqueeze(0)
 
         if fix_noise:
@@ -115,10 +108,13 @@ class StructuralEquationModel(object):
 
         weights = torch.cat([self.graph.weights, noise.t()], dim=1)
 
-        model = torch.cat([weights, z], dim=0)
+        # perform intervention on the model
+        if intervention is not None:
+            targets, value = intervention
+            do_x = torch.tensor([0. for _ in range(self.dim)] + [value])
+            weights[targets] = do_x
 
-        if inter_target is not None:
-            model[inter_target, :] = do_x
+        model = torch.cat([weights, z], dim=0)
 
         result = z.clone().t()
 

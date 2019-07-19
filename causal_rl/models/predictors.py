@@ -147,11 +147,12 @@ class InversePredictor(nn.Module):
     def _weights(self, intervention=None):
 
         if intervention is None:
-            B = self.B
+            targets = torch.zeros(self.dim).byte()
         else:
-            target, _ = intervention
-            B = self.B.clone()
-            B[target, :] = torch.zeros(self.dim)
+            targets, _ = intervention
+
+        B = self.B.clone()
+        B[targets] = torch.zeros(self.dim)
 
         return torch.stack(
             [B.matrix_power(d) for d in range(self.dim)]
@@ -161,10 +162,10 @@ class InversePredictor(nn.Module):
         return self._weights().inverse().matmul(observation.squeeze())
 
     def _predict(self, noise, intervention):
-        target, value = intervention
+        targets, value = intervention
 
         u = noise.clone().squeeze()
-        u[target] = value
+        u[targets] = value
 
         return self._weights(intervention).matmul(u)
 
