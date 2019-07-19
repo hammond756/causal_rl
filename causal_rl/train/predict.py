@@ -25,18 +25,18 @@ from itertools import chain, combinations
 from causal_rl.models import predictors, policies
 
 
-def interventions(variables):
+def interventions(variables, max, min=0):
     '''
     Generates a byte tensor with all possible combinations of variables
     to intervene on, including the empty set.
     '''
-    def powerset(iterable):
+    def powerset(iterable, min, max):
         "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
         s = list(iterable)
-        return chain.from_iterable(combinations(s, r) for r in range(len(s)+1))
+        return chain.from_iterable(combinations(s, r) for r in range(min, max+1))
 
     result = []
-    for subset in powerset(variables):
+    for subset in powerset(variables, min, max):
         mask = torch.tensor(
             [1. if i in subset else 0. for i in range(len(variables))]
         )
@@ -112,6 +112,8 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--output_dir', type=str, action=readable_dir)
         self.add_argument('--seed', type=int, default=None)
         self.add_argument('--intervention_value', type=int, default=0)
+        self.add_argument('--min_targets', type=int, default=0)
+        self.add_argument('--max_targets', type=int)
         self.add_argument('--lr_p', type=float, default=0.0001)
         self.add_argument('--lr_a', type=float, default=0.1)
         self.add_argument('--lambda_1', type=float, default=1.0)
@@ -129,7 +131,10 @@ def train(sem, config):
     n_iterations = config.n_iters
 
     variables = torch.arange(sem.dim)
-    allowed_actions = interventions(variables)
+    allowed_actions = interventions(variables,
+                                    min=config.min_targets,
+                                    max=config.max_targets
+                                    if config.max_targets else sem.dim)
 
     # init APC model. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = x. The learned
@@ -281,6 +286,7 @@ def train(sem, config):
             print('lasso loss:     ', lasso_loss_sum / config.log_iters)
             print('cycle loss:     ', cycle_loss_sum / config.log_iters)
             print('obs  ', pretty(observation))
+            print('int  ', pretty(intervention[0]))
             print()
             print('true ', pretty(target))
             print('pred ', pretty(prediction))
