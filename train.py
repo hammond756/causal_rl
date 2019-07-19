@@ -62,6 +62,14 @@ if __name__ == '__main__':
 
     records = train(sem, config)
 
+    print('----------')
+    print('w_true')
+    print(records[-1]['w_true'])
+    print()
+    print('w_model')
+    print(records[-1]['w_model'])
+    print('----------')
+
     # # # # #
     # save all the things
     # # # # #

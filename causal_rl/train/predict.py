@@ -100,6 +100,7 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--ordered', type=str2bool, default=False)
         self.add_argument('--method', type=str, default='matrix')
         self.add_argument('--predictor', type=str, default='two_step')
+        self.add_argument('--clip_grad', type=float, default=float('Inf'))
 
 
 def train(sem, config):
@@ -217,6 +218,9 @@ def train(sem, config):
         # compute gradients
         loss.backward()
 
+        torch.nn.utils.clip_grad_norm_(model.parameters(),
+                                       max_norm=config.clip_grad)
+
         # heuristic. we know that the true matrix is lower triangular.
         if config.ordered:
             model.B.grad.tril_(-1)
@@ -281,7 +285,7 @@ def train(sem, config):
                 'cpu_time': cpu_time_sum,
                 'action_probs': action_prob.detach().numpy(),
                 'w_true': w_true.detach().numpy(),
-                'w_model': w_model.detach().numpy(),
+                'w_model': w_model.clone().detach().numpy(),
             }
 
             # add entire configuration object to the row

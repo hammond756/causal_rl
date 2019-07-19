@@ -166,7 +166,7 @@ class InversePredictor(nn.Module):
         u = noise.clone().squeeze()
         u[target] = value
 
-        return self._weights().matmul(u)
+        return self._weights(intervention).matmul(u)
 
     def forward(self, observation, intervention):
         noise = self._abduct(observation)
