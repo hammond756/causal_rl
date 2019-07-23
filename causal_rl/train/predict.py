@@ -30,6 +30,10 @@ def interventions(variables, max, min=0):
     Generates a byte tensor with all possible combinations of variables
     to intervene on, including the empty set.
     '''
+
+    assert max < len(variables), 'Agent is now allowed to intervene on \
+        all nodes'
+
     def powerset(iterable, min, max):
         "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
         s = list(iterable)
@@ -134,7 +138,7 @@ def train(sem, config):
     allowed_actions = interventions(variables,
                                     min=config.min_targets,
                                     max=config.max_targets
-                                    if config.max_targets else sem.dim)
+                                    if config.max_targets else sem.dim - 1)
 
     # init APC model. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = x. The learned
@@ -224,8 +228,9 @@ def train(sem, config):
         # to truth.
         optimizer.zero_grad()
 
-        # compute loss components
-        pred_loss = (prediction - target).pow(2).mean()
+        # compute loss components of un-intervened nodes
+        predicted_vars = 1 - action.unsqueeze(0)
+        pred_loss = (prediction - target)[predicted_vars].pow(2).mean()
 
         lasso_loss = model.B.norm(p=1)
         cycle_loss = model.B.matrix_power(model.dim).norm(p=1)
