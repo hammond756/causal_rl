@@ -138,7 +138,8 @@ def train(sem, config):
     allowed_actions = interventions(variables,
                                     min=config.min_targets,
                                     max=config.max_targets
-                                    if config.max_targets else sem.dim - 1)
+                                    if config.max_targets is not None
+                                    else sem.dim - 1)
 
     # init APC model. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = x. The learned
@@ -148,11 +149,11 @@ def train(sem, config):
                                              method=config.method)
     if config.predictor == 'two_step':
         optimizer = torch.optim.SGD([
-            {'params': model.predict.parameters(), 'lr': config.lr_p * sem.dim},
-            {'params': model.abduct.parameters(), 'lr': config.lr_a * sem.dim}
+            {'params': model.predict.parameters(), 'lr': config.lr_p},
+            {'params': model.abduct.parameters(), 'lr': config.lr_a}
         ])
     else:
-        optimizer = torch.optim.SGD(model.parameters(), lr=config.lr_p * sem.dim)
+        optimizer = torch.optim.SGD(model.parameters(), lr=config.lr_p)
 
     # gather relevant arguments for policy
     policy_args = {
