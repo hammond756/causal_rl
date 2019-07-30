@@ -137,7 +137,7 @@ class InversePredictor(nn.Module):
 
         self.dim = dim
 
-        weights = torch.randn((self.dim, self.dim))
+        weights = torch.randn((self.dim, self.dim)) * 0.001
         if ordered:
             weights.tril_(-1)
 
