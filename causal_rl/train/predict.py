@@ -233,7 +233,7 @@ def train(sem, config):
         predicted_vars = 1 - action.unsqueeze(0)
         pred_loss = (prediction - target)[predicted_vars].pow(2).mean()
 
-        lasso_loss = model.B.norm(p=1)
+        lasso_loss = model.B.norm(p=1) / sem.dim ** 2
         cycle_loss = model.B.matrix_power(model.dim).norm(p=1)
 
         # compute regularization loss
@@ -308,10 +308,22 @@ def train(sem, config):
             w_model = model.B.detach()
             diff = (w_true - w_model)
 
+            def true_postive(sem, diff):
+                num_true = sem.graph.edges.sum().item()
+                error = (diff.abs() * sem.graph.edges.float()).sum().item()
+                return error / num_true
+
+            def false_positive(sem, diff):
+                num_false = sem.dim**2 - sem.graph.edges.sum().item()
+                error = (diff.abs() * (1 - sem.graph.edges.float())).sum().item()
+                return error / num_false
+
             row = {
                 'dim': sem.dim,
                 'iterations': iteration,
                 'causal_err': diff.abs().sum().item(),
+                'true_postive': true_postive(sem, diff),
+                'false_positive': false_positive(sem, diff),
                 'pred_loss': pred_loss_sum / config.log_iters,
                 'lasso_loss': lasso_loss_sum / config.log_iters,
                 'cycle_loss': cycle_loss_sum / config.log_iters,
