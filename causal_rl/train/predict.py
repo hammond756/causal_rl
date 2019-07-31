@@ -66,20 +66,6 @@ def policy_reward(old, new):
     return r
 
 
-class readable_dir(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        if not os.path.isdir(values):
-            raise argparse.ArgumentTypeError(
-                "readable_dir:{0} is not a valid path".format(values)
-            )
-        if os.access(values, os.R_OK):
-            setattr(namespace, self.dest, values)
-        else:
-            raise argparse.ArgumentTypeError(
-                "readable_dir:{0} is not a readable dir".format(values)
-            )
-
-
 def str2bool(v):
     if v.lower() in ('yes', 'true', 't', 'y', '1'):
         return True
@@ -113,7 +99,8 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--n_iters', type=int, default=50000)
         self.add_argument('--log_iters', type=int, default=1000)
         self.add_argument('--policy', type=str, default='random')
-        self.add_argument('--output_dir', type=str, action=readable_dir)
+        self.add_argument('--output_dir', type=str,
+                          default='experiments/inbox')
         self.add_argument('--seed', type=int, default=None)
         self.add_argument('--intervention_value', type=int, default=0)
         self.add_argument('--min_targets', type=int, default=0)

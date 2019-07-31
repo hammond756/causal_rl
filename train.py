@@ -9,13 +9,13 @@ from causal_rl.train import train, PredictArgumentParser
 from causal_rl.environments import causal_models, directed_edges
 
 
-def save_configuration(config):
+def save_configuration(config, output_dir):
     """
     Creates a file in the output directory specified in the _config_ object
     with all the arguments and values. This file can be used to re-run the
     script with the same parameters.
     """
-    with open(config.output_dir + '/config.txt', 'w') as f:
+    with open(output_dir + '/config.txt', 'w') as f:
         for key, value in vars(config).items():
             f.write('--{}\n'.format(key))
 
@@ -31,15 +31,10 @@ if __name__ == '__main__':
     parser = PredictArgumentParser()
     config = parser.parse_args()
 
+
     if config.dag_name == 'random':
         assert 'random_dag' in vars(config), \
             'Size is required for a random graph'
-
-    if not config.output_dir:
-        _id = str(uuid.uuid1())
-        output_dir = os.path.join('experiments', 'inbox', str(_id))
-        os.makedirs(output_dir)
-        config.output_dir = output_dir
 
     # save seed for reproducibility
     if config.seed is None:
@@ -74,8 +69,11 @@ if __name__ == '__main__':
     # save all the things
     # # # # #
 
-    save_configuration(config)
+    output_dir = os.path.join(config.output_dir,  str(uuid.uuid1()))
+    os.makedirs(output_dir)
+
+    save_configuration(config, output_dir)
 
     # statistics
-    with open(config.output_dir + '/stats.pkl', 'wb') as f:
+    with open(output_dir + '/stats.pkl', 'wb') as f:
         pickle.dump(pd.DataFrame(records), f)
