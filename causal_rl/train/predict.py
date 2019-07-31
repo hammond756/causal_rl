@@ -297,19 +297,25 @@ def train(sem, config):
 
             def true_postive(sem, diff):
                 num_true = sem.graph.edges.sum().item()
-                error = (diff.abs() * sem.graph.edges.float()).sum().item()
-                return error / num_true
+
+                # completely disconnector model, all error is false positive
+                if num_true == 0:
+                    return 0
+
+                error = (diff.abs() * sem.graph.edges.float()).sum()
+                return error.item() / num_true
 
             def false_positive(sem, diff):
                 num_false = sem.dim**2 - sem.graph.edges.sum().item()
-                error = (diff.abs() * (1 - sem.graph.edges.float())).sum().item()
-                return error / num_false
+
+                error = (diff.abs() * (1 - sem.graph.edges.float())).sum()
+                return error.item() / num_false
 
             row = {
                 'dim': sem.dim,
                 'iterations': iteration,
                 'causal_err': diff.abs().sum().item(),
-                'true_postive': true_postive(sem, diff),
+                'true_positive': true_postive(sem, diff),
                 'false_positive': false_positive(sem, diff),
                 'pred_loss': pred_loss_sum / config.log_iters,
                 'lasso_loss': lasso_loss_sum / config.log_iters,
