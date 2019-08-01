@@ -5,8 +5,9 @@ import torch.nn as nn
 class SimplePolicy(nn.Module):
     def __init__(self, **kwargs):
         super(SimplePolicy, self).__init__()
-        dim = kwargs.get('dim')
-        self.action_weight = nn.Parameter(torch.randn(dim))
+        n_actions = kwargs.get('n_actions')
+
+        self.action_weight = nn.Parameter(torch.randn(n_actions))
 
     def forward(self, *args):
         action_logprob = torch.log_softmax(self.action_weight, dim=-1)
@@ -17,7 +18,8 @@ class LinearPolicy(nn.Module):
     def __init__(self, **kwargs):
         super(LinearPolicy, self).__init__()
         dim = kwargs.get('dim')
-        self.linear = nn.Linear(dim, dim)
+        n_actions = kwargs.get('n_actions')
+        self.linear = nn.Linear(dim, n_actions)
 
     def forward(self, *args):
         x = args[0]
@@ -26,56 +28,32 @@ class LinearPolicy(nn.Module):
 
 class RandomPolicy():
     def __init__(self, **kwargs):
-        self.dim = kwargs.get('dim')
+        n = kwargs.get('n_actions')
+        self.weights = torch.ones(n)
+        self.bias = kwargs.get('bias', torch.zeros(n))
 
     def __call__(self, *args):
-        action_probs = torch.tensor([1. / self.dim for _ in range(self.dim)])
-        return torch.log(action_probs)
+        action_probs = torch.log_softmax(self.weights + self.bias, dim=-1)
+        return action_probs
 
 
-class CyclicPolicy():
+class SinkPolicy(RandomPolicy):
     def __init__(self, **kwargs):
-        self.dim = kwargs.get('dim')
-        self.position = 0
-
-    def __call__(self, *args):
-        action_probs = torch.tensor([1. if i == self.position else 0.
-                                     for i in range(self.dim)])
-
-        return torch.log(action_probs)
+        super(SinkPolicy, self).__init__(**kwargs)
 
 
-class ChildPolicy():
+class NonSinkPolicy(RandomPolicy):
     def __init__(self, **kwargs):
-        self.dim = kwargs.get('dim')
-        self.child_idxs = kwargs.get('child_idxs')
-
-    def __call__(self, *args):
-        n = len(self.child_idxs)
-        action_probs = torch.tensor([1. / n if i in self.child_idxs else 0.
-                                     for i in range(self.dim)])
-
-        return torch.log(action_probs)
-
-
-class RootPolicy():
-    def __init__(self, **kwargs):
-        self.dim = kwargs.get('dim')
-        self.root_idxs = kwargs.get('root_idxs')
-
-    def __call__(self, *args):
-        n = len(self.root_idxs)
-        action_probs = torch.tensor([1. / n if i in self.root_idxs else 0.
-                                     for i in range(self.dim)])
-
-        return torch.log(action_probs)
+        super(NonSinkPolicy, self).__init__(**kwargs)
 
 
 class IntrospectivePolicy(nn.Module):
     def __init__(self, **kwargs):
         super(IntrospectivePolicy, self).__init__()
-        self.dim = kwargs.get('dim')
-        self.linear = nn.Linear(self.dim*self.dim, self.dim)
+        dim = kwargs.get('dim')
+        n = kwargs.get('n_actions')
+
+        self.linear = nn.Linear(dim*dim, n)
 
     def forward(self, adjecency_matrix):
         inp = adjecency_matrix.view(-1)
@@ -88,7 +66,7 @@ policies = {
     'simple': SimplePolicy,
     'random': RandomPolicy,
     'linear': LinearPolicy,
-    'child': ChildPolicy,
-    'root': RootPolicy,
+    'non_sink': NonSinkPolicy,
+    'sink': SinkPolicy,
     'introspective': IntrospectivePolicy
 }

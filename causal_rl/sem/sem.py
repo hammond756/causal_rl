@@ -12,6 +12,9 @@ class DirectedAcyclicGraph(object):
     def parents(self, i):
         return self._weights[:, i].nonzero()
 
+    def children(self, i):
+        return self._weights[i, :].nonzero()
+
     def incoming_weights(self, i):
         return self._weights[:, i]
 
@@ -37,6 +40,15 @@ class DirectedAcyclicGraph(object):
     def _child_indices(self):
         idxs = [i for i in range(self.dim) if self.parents(i).nelement() > 0]
         return torch.tensor(idxs)
+
+    @property
+    def _sink_mask(self):
+        mask = [self.children(i).nelement() == 0 for i in range(self.dim)]
+        return torch.tensor(mask)
+
+    @property
+    def _non_sink_mask(self):
+        return 1 - self._sink_mask
 
     @property
     def edges(self):
@@ -90,6 +102,14 @@ class StructuralEquationModel(object):
     @property
     def root_idxs(self):
         return self.graph._root_indices
+
+    @property
+    def non_sink_mask(self):
+        return self.graph._non_sink_mask
+
+    @property
+    def sink_mask(self):
+        return self.graph._sink_mask
 
     def counterfactual(self, z_prev=None, intervention=None):
         return self._sample(1, z_prev, intervention, fix_noise=True)

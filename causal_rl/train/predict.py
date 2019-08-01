@@ -139,14 +139,20 @@ def train(sem, config):
 
     # gather relevant arguments for policy
     policy_args = {
-        'dim': len(allowed_actions)
+        'n_actions': len(allowed_actions),
+        'dim': sem.dim,
     }
 
-    if config.policy == 'child':
-        policy_args['child_idxs'] = sem.child_idxs
+    if config.policy == 'sink':
+        # add a bias towards action that contain ONLY sink variables
+        bias = allowed_actions[:, sem.non_sink_mask].sum(dim=1) == 0
+        policy_args['bias'] = bias.float()
 
-    if config.policy == 'root':
-        policy_args['root_idxs'] = sem.root_idxs
+    if config.policy == 'non_sink':
+        # add a bias towards action that contain NO sink variables
+        bias = allowed_actions[:, sem.sink_mask].sum(dim=1) == 0
+        policy_args['bias'] = bias.float()
+
 
     # initialize policy. This model chooses an the intervention to perform
     policy = policies.get(config.policy)(**policy_args)
@@ -182,6 +188,8 @@ def train(sem, config):
         inp = {
             'introspective': model.B.detach(),
             'linear': observation,
+            'sink': None,
+            'non_sink': None,
             'simple': None,
             'random': None,
             'cyclic': None,
