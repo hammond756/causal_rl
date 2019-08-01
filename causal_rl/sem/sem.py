@@ -118,7 +118,7 @@ class StructuralEquationModel(object):
 
         result = z.clone().t()
 
-        for i in range(self.dim - 1):
+        for i in range(self.dim):
             result = model.matmul(result)
 
         return result.t()[:, :-1]
