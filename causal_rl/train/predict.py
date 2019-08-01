@@ -105,8 +105,8 @@ class PredictArgumentParser(argparse.ArgumentParser):
         self.add_argument('--intervention_value', type=int, default=0)
         self.add_argument('--min_targets', type=int, default=0)
         self.add_argument('--max_targets', type=int)
-        self.add_argument('--lr_p', type=float, default=0.0001)
-        self.add_argument('--lr_a', type=float, default=0.1)
+        self.add_argument('--lr_apc', type=float, default=0.01)
+        self.add_argument('--lr_policy', type=float, default=0.001)
         self.add_argument('--lambda_1', type=float, default=1.0)
         self.add_argument('--lambda_2', type=float, default=1.0)
         self.add_argument('--noise_dist', nargs=2, action=parse_noise_arg,
@@ -134,13 +134,8 @@ def train(sem, config):
     model = predictors.get(config.predictor)(sem.dim,
                                              ordered=config.ordered,
                                              method=config.method)
-    if config.predictor == 'two_step':
-        optimizer = torch.optim.SGD([
-            {'params': model.predict.parameters(), 'lr': config.lr_p},
-            {'params': model.abduct.parameters(), 'lr': config.lr_a}
-        ])
-    else:
-        optimizer = torch.optim.SGD(model.parameters(), lr=config.lr_p)
+
+    optimizer = torch.optim.SGD(model.parameters(), lr=config.lr_apc)
 
     # gather relevant arguments for policy
     policy_args = {
@@ -156,7 +151,7 @@ def train(sem, config):
     # initialize policy. This model chooses an the intervention to perform
     policy = policies.get(config.policy)(**policy_args)
     if isinstance(policy, nn.Module):
-        policy_optim = torch.optim.Adam(policy.parameters(), lr=config.lr)
+        policy_optim = torch.optim.SGD(policy.parameters(), lr=config.lr_policy)
         # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
         # policy_baseline = 0
 
