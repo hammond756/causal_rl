@@ -10,10 +10,10 @@ class DirectedAcyclicGraph(object):
         self.depth = weights.shape[0]
 
     def parents(self, i):
-        return self._weights[:, i].nonzero()
+        return self._weights[i, :].nonzero()
 
     def children(self, i):
-        return self._weights[i, :].nonzero()
+        return self._weights[:, i].nonzero()
 
     def incoming_weights(self, i):
         return self._weights[:, i]
