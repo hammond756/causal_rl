@@ -21,6 +21,7 @@ import argparse
 import os
 import time
 from itertools import chain, combinations
+from collections import defaultdict
 
 from causal_rl.models import predictors, policies
 
@@ -153,6 +154,14 @@ def train(sem, config):
         bias = allowed_actions[:, sem.sink_mask].sum(dim=1) == 0
         policy_args['bias'] = bias.float()
 
+    if config.policy.split('_')[0] == 'action':
+        action_idxs = torch.tensor(
+            [int(x) for x in config.policy.split('_')[1:]]
+        )
+        bias = torch.zeros(len(allowed_actions))
+        bias[action_idxs] = 1.
+        policy_args['bias'] = bias.float()
+
 
     # initialize policy. This model chooses an the intervention to perform
     policy = policies.get(config.policy)(**policy_args)
@@ -185,17 +194,10 @@ def train(sem, config):
         # sample action from policy network
         # action_logprob and action_prob are needed elsewhere
         # to calculate the reward and entropy coefficient
-        inp = {
+        inp = defaultdict(lambda: None, {
             'introspective': model.B.detach(),
-            'linear': observation,
-            'sink': None,
-            'non_sink': None,
-            'simple': None,
-            'random': None,
-            'cyclic': None,
-            'child': None,
-            'root': None,
-        }[config.policy]
+            'linear': observation
+        })[config.policy]
 
         action_logprob = policy(inp)
         action_prob = action_logprob.exp()

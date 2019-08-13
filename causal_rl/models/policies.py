@@ -30,21 +30,15 @@ class RandomPolicy():
     def __init__(self, **kwargs):
         n = kwargs.get('n_actions')
         self.weights = torch.ones(n)
-        self.bias = kwargs.get('bias', torch.zeros(n))
+
+        # distribute the action weights according to bias
+        # the higher the mulitplier, the more biased the
+        # probablities
+        self.bias = 10 * kwargs.get('bias', torch.zeros(n))
 
     def __call__(self, *args):
         action_probs = torch.log_softmax(self.weights + self.bias, dim=-1)
         return action_probs
-
-
-class SinkPolicy(RandomPolicy):
-    def __init__(self, **kwargs):
-        super(SinkPolicy, self).__init__(**kwargs)
-
-
-class NonSinkPolicy(RandomPolicy):
-    def __init__(self, **kwargs):
-        super(NonSinkPolicy, self).__init__(**kwargs)
 
 
 class IntrospectivePolicy(nn.Module):
@@ -64,9 +58,17 @@ class IntrospectivePolicy(nn.Module):
 
 policies = {
     'simple': SimplePolicy,
-    'random': RandomPolicy,
     'linear': LinearPolicy,
-    'non_sink': NonSinkPolicy,
-    'sink': SinkPolicy,
+    'random': RandomPolicy,
+    'non_sink': RandomPolicy,
+    'sink': RandomPolicy,
+    'action_0': RandomPolicy,
+    'action_1': RandomPolicy,
+    'action_2': RandomPolicy,
+    'action_3': RandomPolicy,
+    'action_4': RandomPolicy,
+    'action_5': RandomPolicy,
+    'action_6': RandomPolicy,
+    'action_1_4': RandomPolicy,
     'introspective': IntrospectivePolicy
 }
