@@ -230,7 +230,7 @@ def train(sem, config):
 
             # policy loss makes high reward actions more probable to be
             # intervened on (ie. actions that confuse the predictor)
-            log_prob = torch.log(policy.action_prob)
+            log_prob = torch.log(policy.sample_prob())
             action_loss = -reward * log_prob
             action_loss_sum += action_loss.item()
 

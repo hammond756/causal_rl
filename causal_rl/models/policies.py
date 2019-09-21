@@ -1,17 +1,27 @@
 import torch
 import torch.nn as nn
+import functools
 
 
 class SimplePolicy(nn.Module):
     def __init__(self, **kwargs):
         super(SimplePolicy, self).__init__()
-        n_actions = kwargs.get('n_actions')
+        self.n_actions = kwargs.get('n_actions')
 
-        self.action_weight = nn.Parameter(torch.randn(n_actions))
+        self.weights = nn.Parameter(torch.ones(2, self.n_actions))
+
+    def sample_prob(self):
+        return functools.reduce(lambda x, y: x*y, self._sample_prob)
 
     def forward(self, *args):
-        action_logprob = torch.log_softmax(self.action_weight, dim=-1)
-        return action_logprob
+        probs = self.weights.softmax(dim=0)
+        action = torch.multinomial(probs.t(), 1).squeeze().byte()
+
+        self.action_probs = probs[1, :].detach()
+        self._sample_prob = probs[action.detach().long(),
+                                  torch.arange(self.n_actions)]
+
+        return action
 
 
 class LinearPolicy(nn.Module):
