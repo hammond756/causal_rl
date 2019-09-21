@@ -145,13 +145,21 @@ def train(sem, config):
     }
 
     if config.policy == 'sink':
-        # add a bias towards action that contain ONLY sink variables
-        bias = allowed_actions[:, sem.non_sink_mask].sum(dim=1) == 0
+        # add a bias towards action that contain at least one sink variable
+        bias = allowed_actions[:, sem.sink_mask].sum(dim=1) > 0
         policy_args['bias'] = bias.float()
 
     if config.policy == 'non_sink':
         # add a bias towards action that contain NO sink variables
         bias = allowed_actions[:, sem.sink_mask].sum(dim=1) == 0
+        policy_args['bias'] = bias.float()
+
+    if config.policy == 'parent':
+        bias = allowed_actions[:, sem.parent_mask].sum(dim=1) > 0
+        policy_args['bias'] = bias.float()
+
+    if config.policy == 'non_parent':
+        bias = allowed_actions[:, sem.parent_mask].sum(dim=1) == 0
         policy_args['bias'] = bias.float()
 
     if config.policy.split('_')[0] == 'action':

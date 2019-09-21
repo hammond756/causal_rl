@@ -6,13 +6,18 @@ chain = torch.tensor(
      [0, 1, 0]]
 )
 
-collider = torch.tensor(
+
+def n_chain(n):
+    return torch.diag(torch.ones(n-1), -1)
+
+
+confounder = torch.tensor(
     [[0, 0, 0],
      [1, 0, 0],
      [1, 0, 0]]
 )
 
-confounder = torch.tensor(
+collider = torch.tensor(
     [[0, 0, 0],
      [0, 0, 0],
      [1, 1, 0]]
@@ -47,12 +52,17 @@ stacked_chain = torch.tensor(
 )
 
 directed_edges = {
-    'chain': chain,
+    'chain': n_chain(3),
+    'chain_2': n_chain(2),
+    'chain_4': n_chain(4),
+    'chain_5': n_chain(5),
     'collider': collider,
     'confounder': confounder,
     'shielded_collider': shielded_collider,
     'independent': independent,
-    'disconnected': disconnected
+    'disconnected': disconnected,
+
+
 }
 
 specified_common_effect = torch.tensor(

@@ -11,7 +11,8 @@ def draw(graph, path=None):
     G.add_edges_from(edges)
 
     # plot graph
-    plt.subplot(111)
+    plt.figure()
+    # plt.subplot(111)
     pos = nx.nx_agraph.graphviz_layout(G, prog='dot')
     nx.draw(G, pos=pos, with_labels=True)
 

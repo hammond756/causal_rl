@@ -51,6 +51,15 @@ class DirectedAcyclicGraph(object):
         return 1 - self._sink_mask
 
     @property
+    def _parent_mask(self):
+        mask = [self.children(i).nelement() > 0 for i in range(self.dim)]
+        return torch.tensor(mask)
+
+    @property
+    def _non_parent_mask(self):
+        return 1 - self._parent_mask
+
+    @property
     def edges(self):
         edges = torch.zeros_like(self._weights)
         for j, k in self._weights.nonzero():

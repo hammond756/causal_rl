@@ -62,6 +62,8 @@ policies = {
     'random': RandomPolicy,
     'non_sink': RandomPolicy,
     'sink': RandomPolicy,
+    'parent': RandomPolicy,
+    'non_parent': RandomPolicy,
     'action_0': RandomPolicy,
     'action_1': RandomPolicy,
     'action_2': RandomPolicy,
