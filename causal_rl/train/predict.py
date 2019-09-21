@@ -18,36 +18,10 @@ are optimally informative for the predictor.
 import torch
 import torch.nn as nn
 import argparse
-import os
 import time
-from itertools import chain, combinations
 from collections import defaultdict
 
 from causal_rl.models import predictors, policies
-
-
-def interventions(variables, max, min=0):
-    '''
-    Generates a byte tensor with all possible combinations of variables
-    to intervene on, including the empty set.
-    '''
-
-    assert max < len(variables), 'Agent is now allowed to intervene on \
-        all nodes'
-
-    def powerset(iterable, min, max):
-        "powerset([1,2,3]) --> () (1,) (2,) (3,) (1,2) (1,3) (2,3) (1,2,3)"
-        s = list(iterable)
-        return chain.from_iterable(combinations(s, r) for r in range(min, max+1))
-
-    result = []
-    for subset in powerset(variables, min, max):
-        mask = torch.tensor(
-            [1. if i in subset else 0. for i in range(len(variables))]
-        )
-        result.append(mask)
-
-    return torch.stack(result).byte()
 
 
 def pretty(vector):
@@ -122,13 +96,6 @@ def train(sem, config):
 
     n_iterations = config.n_iters
 
-    variables = torch.arange(sem.dim)
-    allowed_actions = interventions(variables,
-                                    min=config.min_targets,
-                                    max=config.max_targets
-                                    if config.max_targets is not None
-                                    else sem.dim - 1)
-
     # init APC model. This model takes in sampled values of X and
     # tries to predict X under intervention X_i = x. The learned
     # weights model the weights on the causal model.
@@ -140,41 +107,31 @@ def train(sem, config):
 
     # gather relevant arguments for policy
     policy_args = {
-        'n_actions': len(allowed_actions),
+        'n_actions': sem.dim,
         'dim': sem.dim,
+        'subset': torch.ones(sem.dim, dtype=torch.uint8)
     }
 
     if config.policy == 'sink':
-        # add a bias towards action that contain at least one sink variable
-        bias = allowed_actions[:, sem.sink_mask].sum(dim=1) > 0
-        policy_args['bias'] = bias.float()
+        # limit interventions to sink nodes
+        policy_args['subset'] = sem.sink_mask
 
     if config.policy == 'non_sink':
-        # add a bias towards action that contain NO sink variables
-        bias = allowed_actions[:, sem.sink_mask].sum(dim=1) == 0
-        policy_args['bias'] = bias.float()
-
-    if config.policy == 'parent':
-        bias = allowed_actions[:, sem.parent_mask].sum(dim=1) > 0
-        policy_args['bias'] = bias.float()
-
-    if config.policy == 'non_parent':
-        bias = allowed_actions[:, sem.parent_mask].sum(dim=1) == 0
-        policy_args['bias'] = bias.float()
+        # limit interventions to non-sink nodes
+        policy_args['subset'] = sem.non_sink_mask
 
     if config.policy.split('_')[0] == 'action':
         action_idxs = torch.tensor(
             [int(x) for x in config.policy.split('_')[1:]]
         )
-        bias = torch.zeros(len(allowed_actions))
-        bias[action_idxs] = 1.
-        policy_args['bias'] = bias.float()
-
+        policy_args['subset'] = torch.zeros(sem.dim, dtype=torch.int8)
+        policy_args['subset'][action_idxs] = 1
 
     # initialize policy. This model chooses an the intervention to perform
     policy = policies.get(config.policy)(**policy_args)
     if isinstance(policy, nn.Module):
-        policy_optim = torch.optim.SGD(policy.parameters(), lr=config.lr_policy)
+        policy_optim = torch.optim.SGD(policy.parameters(),
+                                       lr=config.lr_policy)
         # policy_optim = torch.optim.RMSprop(policy.parameters(), lr=0.0143)
         # policy_baseline = 0
 
@@ -207,12 +164,7 @@ def train(sem, config):
             'linear': observation
         })[config.policy]
 
-        action_logprob = policy(inp)
-        action_prob = action_logprob.exp()
-        action_idx = torch.multinomial(action_prob, 1).long().item()
-
-        # covert action to intervention
-        action = allowed_actions[action_idx]
+        action = policy(inp)
         inter_value = config.intervention_value
         intervention = (action, inter_value)
 
@@ -231,7 +183,11 @@ def train(sem, config):
 
         # compute loss components of un-intervened nodes
         predicted_vars = 1 - action.unsqueeze(0)
-        pred_loss = (prediction - target)[predicted_vars].pow(2).mean()
+
+        if predicted_vars.sum().item():
+            pred_loss = (prediction - target)[predicted_vars].pow(2).mean()
+        else:
+            pred_loss = torch.tensor(0.)
 
         lasso_loss = model.B.norm(p=1) / sem.dim ** 2
         cycle_loss = model.B.matrix_power(model.dim).norm(p=1)
@@ -274,7 +230,7 @@ def train(sem, config):
 
             # policy loss makes high reward actions more probable to be
             # intervened on (ie. actions that confuse the predictor)
-            log_prob = action_logprob[action_idx]
+            log_prob = torch.log(policy.action_prob)
             action_loss = -reward * log_prob
             action_loss_sum += action_loss.item()
 
@@ -336,7 +292,7 @@ def train(sem, config):
                 'total_loss': total_loss_sum / config.log_iters,
                 'noise_err': noise_err_sum / config.log_iters,
                 'cpu_time': cpu_time_sum,
-                'action_probs': action_prob.detach().numpy(),
+                'action_probs': policy.action_probs.detach().numpy(),
                 'w_true': w_true.detach().numpy(),
                 'w_model': w_model.clone().detach().numpy(),
             }

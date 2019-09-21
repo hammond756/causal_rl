@@ -31,14 +31,15 @@ class RandomPolicy():
         n = kwargs.get('n_actions')
         self.weights = torch.ones(n)
 
-        # distribute the action weights according to bias
-        # the higher the mulitplier, the more biased the
-        # probablities
-        self.bias = 10 * kwargs.get('bias', torch.zeros(n))
+        # only sample from the provided subset
+        self.subset = kwargs.get('subset', torch.ones(n))
+        self.probs = torch.tensor(0.5).repeat(n) * self.subset.float()
+        self.dist = torch.distributions.Bernoulli(probs=self.probs)
+
+        self.action_probs = 0.5**torch.sum(self.subset).repeat(n)
 
     def __call__(self, *args):
-        action_probs = torch.log_softmax(self.weights + self.bias, dim=-1)
-        return action_probs
+        return self.dist.sample().byte()
 
 
 class IntrospectivePolicy(nn.Module):
